@@ -3,7 +3,7 @@
 # pip install requests
 # pip install ytmusicapi
 debug_idxs = set()    # 全部走行
-#debug_idxs = {4}   # 特定走行モード
+# debug_idxs = {5}   # 特定走行モード
 
 import os, sys, json, re, glob, requests, pickle, shutil
 from urllib.parse import unquote
@@ -220,17 +220,18 @@ def html_sinfo_tr(nocnt, ckfiles, views = 0):  # sinfo行情報作成
         name_style += f'[<a class="link-hover" href="{url_youtube(vidid)}">▶️youtube</a>] '
     name_style += f'</div>'
     comment_style = '<table class="pl-table">'
+    mvlink = 'class="mvlink"'
     r = 1
     for ckfile in ckfiles:
         comment_style += f'<tr class="pl-tr"><td class="pl-main{r}-hover">'
-        comment_style += f'<a href="{ckfile}">{emoji(ckfile)} <span class="mid">{ckfile}</span></a>'
+        comment_style += f'<a {mvlink} href="{ckfile}">{emoji(ckfile)} <span class="mid">{ckfile}</span></a>'
         comment_style += f'</td></tr>'
         r = 2 if r == 1 else 1
     comment_style += '</table>'
     return f'''
 <tr class="pl-tr">
   <td rowspan=2 class="pl-no">{nocnt}</td>
-  <td rowspan=2 class="pl-icon-hover"><a href="{ckfiles[-1]}">
+  <td rowspan=2 class="pl-icon-hover"><a {mvlink} href="{ckfiles[-1]}">
     <img class="pl-img" src="{icon}"></a></td>
   <td class="pl-main0">{name_style}</td>
 </tr>
