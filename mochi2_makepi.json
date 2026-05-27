@@ -33,8 +33,8 @@
         "name": "【うたさちHDD】過去回セットリスト" ,
         "pltype": "mochilist",
         "icon": "images/過去回セットリスト.png",
-        "comment1": "過去のもちからOFFで歌われた曲のリストです",
-        "comment2": "ファイルが移動されているとリンクが機能しないこともあります、悪しからず" }
+        "comment1": "過去のもちからOFFで歌われた曲のリストです、コロナ後の2024/04/27のoffから記録",
+        "comment2": "以前にどんな曲が歌われたのかな、というときはこちらを参照ください" }
     ,
     {   "_no": 5,
         "name": "uta-netアニメ01月～03月（冬）" ,
@@ -126,6 +126,7 @@
     {   "_no": 15,
         "name": "ぼっち・ざ・ろっく！ 結束バンド" ,
         "pltype": "dirlist",
+        "plorder": 0,
         "plid": "PLm5iHEZehoq57aYN6vQg6ogCK70fSSJ1Y",
         "icon": "https://cdn.tower.jp/za/o/9W/zaP5_H2043079W.JPG",
         "folder": "ぼっち・ざ・ろっく！ 結束バンド",

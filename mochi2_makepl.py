@@ -3,7 +3,7 @@
 # pip install requests
 # pip install ytmusicapi
 debug_idxs = set()    # 全部走行
-debug_idxs = {0}   # 特定走行モード
+debug_idxs = {15}   # 特定走行モード
 
 import os, sys, json, re, glob, requests, pickle, shutil
 from urllib.parse import unquote
@@ -204,9 +204,10 @@ def url_utanet(utaid):
 def url_youtube(vidid):
     return f'https://www.youtube.com/watch?v={vidid}'
 
-def html_sinfo_tr(nocnt, ckfiles, views = 0):  # sinfo行情報作成
-    # 最終行を取りましょう
-    assf = str(Path(karapath + ckfiles[-1]).with_suffix(".ass"))
+def html_sinfo_tr(nocnt, ckfiles, views = 0, plorder = -1):  # sinfo行情報作成
+    # 指定がなければ最終行、指定することもできる
+    if plorder is None: plorder = -1
+    assf = str(Path(karapath + ckfiles[plorder]).with_suffix(".ass"))
     sinfo = read_ass_sinfo(assf)
     icon = get_imgurl(sinfo)
     name_style  = f'{sinfo.get("title","")} ／ {sinfo.get("artist","")}'
@@ -223,9 +224,17 @@ def html_sinfo_tr(nocnt, ckfiles, views = 0):  # sinfo行情報作成
     mvlink = 'class="mvlink"'
     r = 1
     for ckfile in ckfiles:
-        comment_style += f'<tr class="pl-tr"><td class="pl-main{r}-hover">'
-        comment_style += f'<a {mvlink} href="{ckfile}">{emoji(ckfile)} <span class="mid">{ckfile}</span></a>'
-        comment_style += f'</td></tr>'
+        if '/' in ckfile:
+            ckfile1, ckfile2 = ckfile.rsplit('/', 1)
+        else:
+            ckfile1 = "(フォルダなし)"
+            ckfile2 = ckfile
+        comment_style += f'''\
+<tr class="pl-tr"><td class="pl-main{r}-hover">
+<a {mvlink} href="{ckfile}"><div class="normal-blue">{emoji(ckfile)} {ckfile1}</div>
+<span class="mid">{ckfile2}</span>
+</a></td></tr>
+'''
         r = 2 if r == 1 else 1
     comment_style += '</table>'
     return f'''
@@ -378,27 +387,6 @@ def mk_pl_mochilist(plst):                  # 過去回セットリスト
 scr_utaids = collect_ids("utaid")
 def mk_pl_utanet(plst):                     # uta-net アニメ
     page = requests.get(plst['url']).text
-    pattern = re.compile(r'<a href="/song/(\d+)/">(.*?)</a>\s*/\s*(.*?)</td>')
-    mk_plheader(plst)
-    nocnt = 1
-    html = ['<table class="pl-table">']
-    for utaid, pgttl, pgart in pattern.findall(page):
-        if int(utaid) < 300000:     # 古い曲除外
-            continue
-        ckfiles = scr_utaids.get(utaid)
-        if not ckfiles:             # utaid見つからなければ除外
-            continue
-        html.append(
-            html_sinfo_tr(nocnt,ckfiles)
-        )
-        nocnt += 1
-    html.append("</table>")
-    with open(htmlfhead + plst['name'] + ".html", 'a', encoding='utf-8') as f:
-        f.write("".join(html))
-    mk_plfooter(plst)
-
-def mk_pl_utanet(plst):                     # uta-net アニメ
-    page = requests.get(plst['url']).text
     pattern = re.compile(
         r'<a href="/song/(\d+)/">(.*?)</a>\s*/\s*(.*?)</td>'
     )
@@ -417,7 +405,7 @@ def mk_pl_utanet(plst):                     # uta-net アニメ
     nocnt = 1
     html = ['<table class="pl-table">']
     for views, ckfiles in songs:
-        html.append(html_sinfo_tr(nocnt, ckfiles, views))
+        html.append(html_sinfo_tr(nocnt, ckfiles, views, plst.get('plorder')))
         nocnt += 1
     html.append("</table>")
     with open(htmlfhead + plst['name'] + ".html",'a',encoding='utf-8') as f:
@@ -448,7 +436,7 @@ def mk_pl_dirlist(plst):                    # ディレクトリ配下のプレ�
     nocnt = 1
     html = ['<table class="pl-table">']
     for views, ckfiles in songs:
-        html.append(html_sinfo_tr(nocnt, ckfiles, views))
+        html.append(html_sinfo_tr(nocnt, ckfiles, views, plst.get('plorder')))
         nocnt += 1
     html.append("</table>")
     with open(htmlfhead + plst['name'] + ".html",
@@ -491,7 +479,7 @@ def mk_pl_ytplist(plst):                    # youtubeプレイリスト（フォ
     nocnt = 1
     html = ['<table class="pl-table">']
     for views, ckfiles in songs:
-        html.append(html_sinfo_tr(nocnt, ckfiles, views))
+        html.append(html_sinfo_tr(nocnt, ckfiles, views, plst.get('plorder')))
         nocnt += 1
     html.append("</table>")
     with open(htmlfhead + plst['name'] + ".html",
