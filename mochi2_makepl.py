@@ -3,7 +3,7 @@
 # pip install requests
 # pip install ytmusicapi
 debug_idxs = set()    # 全部走行
-debug_idxs = {15}   # 特定走行モード
+debug_idxs = {0}   # 特定走行モード
 
 import os, sys, json, re, glob, requests, pickle, shutil
 from urllib.parse import unquote
@@ -16,27 +16,50 @@ uri = os.environ.get("REQUEST_URI", "/").split("?", 1)[0]
 os.chdir(Path(__file__).resolve().parent)
 print("Content-Type: text/html; charset=UTF-8\r\n")
 
+NOIMG = "images/noimg.png"
 karapath = open("../Apache24/conf/httpd-mochikara.conf", encoding="utf-8")\
     .read().split('"')[1]
 htmlfhead = karapath + "/プレイリスト/"
 scrbased  = karapath + "/MV_スクロール歌詞/"
+thumbbased = htmlfhead + 'thumbimgs/'
+
+#  整理しましょう
+# mp4f,assf,txtf -> str,karapath込み,/区切り
 
 # 関数
-def open_text_auto(path):           # 文字コード判定open
-    for enc in ( "utf-8-sig","cp932","utf-16","utf-16-le","utf-16-be", ):
+import subprocess
+from pathlib import Path
+
+def make_thumbimg(mp4f, thumbimg, sec = "30"):  
+    thumbimg = Path(thumbimg)
+    thumbimg.parent.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        "../bin/ffmpeg", "-y",  # 上書き
+        "-ss", sec,             # 30秒位置
+        "-i", str(mp4f),
+        "-frames:v", "1",       # 1フレームだけ
+        "-q:v", "2",            # jpg品質
+        str(thumbimg),
+    ]
+    subprocess.run( cmd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=True,
+    )
+
+def open_text_auto(path):
+    for enc in ( "utf-8-sig", "cp932", "utf-16", "utf-16-le", "utf-16-be", ):
         try:
-            f = open(path, encoding=enc)
-            f.read(1)
-            f.seek(0)
-            return f
+            with open(path, encoding=enc) as f:
+                f.read()
+            return open(path, encoding=enc)
         except UnicodeDecodeError:
-            try:
-                f.close()
-            except:
-                pass
+            pass
     raise ValueError(f"decode failed: {path}")
 
 def read_ass_sinfo(assf):               # assのsonginfoを取得
+    if not os.path.exists(assf):
+        return None
     sinfo = {}
     in_sinfo = False
     with open_text_auto(assf) as f:
@@ -53,15 +76,20 @@ def read_ass_sinfo(assf):               # assのsonginfoを取得
                     sinfo[key] = value
     return sinfo
 
-def get_imgurl(sinfo):                  # youtubeの画像urlを返す
+def get_thumbimgf(mp4f):
+    mp4i = mp4f.replace("\\", "/").replace(karapath + "/","")
+    return thumbbased + mp4i.replace("/", "_").rsplit(".", 1)[0] + ".jpg"
+
+def get_imgurl(sinfo, mp4f = None):           # youtubeの画像urlを返す
     vidid = ""
-    if sinfo.get('loopvid'):    vidid = sinfo['loopvid']
-    elif sinfo.get('vidid'):    vidid = sinfo['vidid']
-    elif sinfo.get('videoId'):  vidid = sinfo['videoId']
+    if sinfo and sinfo.get('loopvid'):    vidid = sinfo['loopvid']
+    elif sinfo and sinfo.get('vidid'):    vidid = sinfo['vidid']
+    elif sinfo and sinfo.get('videoId'):  vidid = sinfo['videoId']
     if vidid:
         return "https://i.ytimg.com/vi/" + vidid + "/mqdefault.jpg"
-    else:
-        return "images/noimg.png"
+    if os.path.exists(get_thumbimgf(mp4f)):
+        return get_thumbimgf(mp4f).replace(karapath,"")
+    return NOIMG
 
 def get_songcomment(fname):
     comment1 = f"[{Path(fname).suffix[1:]}]"
@@ -180,7 +208,7 @@ def mk_plfooter(plst):                  # フッタ作成
     
 def html_index_tr(nocnt, icon, name, comment):  # 行情報作成
     if not icon:
-        icon = "images/noimg.png"
+        icon = NOIMG
     name_style = name
     if "/" in name:
         i = name.rfind("/")
@@ -207,19 +235,22 @@ def url_youtube(vidid):
 def html_sinfo_tr(nocnt, ckfiles, views = 0, plorder = -1):  # sinfo行情報作成
     # 指定がなければ最終行、指定することもできる
     if plorder is None: plorder = -1
-    assf = str(Path(karapath + ckfiles[plorder]).with_suffix(".ass"))
+    mp4f = karapath + ckfiles[plorder]
+    assf = str(Path(mp4f).with_suffix(".ass"))
     sinfo = read_ass_sinfo(assf)
-    icon = get_imgurl(sinfo)
-    name_style  = f'{sinfo.get("title","")} ／ {sinfo.get("artist","")}'
-    name_style += f'<div class="pl-smain">{sinfo.get("tieup","")} '
-    utaid = sinfo.get("utaid")
-    vidid = sinfo.get("vidid")
-    name_style += f'表示回数:{views:,}回 '
-    if utaid:
-        name_style += f'[<a class="link-hover" href="{url_utanet(utaid)}">🎼uta-net</a>] '
-    if vidid:
-        name_style += f'[<a class="link-hover" href="{url_youtube(vidid)}">▶️youtube</a>] '
-    name_style += f'</div>'
+    name_style = ckfiles[plorder]
+    if sinfo:
+        img = get_imgurl(sinfo,ckfiles[plorder])
+        name_style  = f'{sinfo.get("title","")} ／ {sinfo.get("artist","")}'
+        name_style += f'<div class="pl-smain">{sinfo.get("tieup","")} '
+        utaid = sinfo.get("utaid")
+        vidid = sinfo.get("vidid")
+        name_style += f'表示回数:{views:,}回 '
+        if utaid:
+            name_style += f'[<a class="link-hover" href="{url_utanet(utaid)}">🎼uta-net</a>] '
+        if vidid:
+            name_style += f'[<a class="link-hover" href="{url_youtube(vidid)}">▶️youtube</a>] '
+        name_style += f'</div>'
     comment_style = '<table class="pl-table">'
     mvlink = 'class="mvlink"'
     r = 1
@@ -241,7 +272,7 @@ def html_sinfo_tr(nocnt, ckfiles, views = 0, plorder = -1):  # sinfo行情報作
 <tr class="pl-tr">
   <td rowspan=2 class="pl-no">{nocnt}</td>
   <td rowspan=2 class="pl-icon-hover"><a {mvlink} href="{ckfiles[-1]}">
-    <img class="pl-img" src="{icon}"></a></td>
+    <img class="pl-img" src="{img}"></a></td>
   <td class="pl-main0">{name_style}</td>
 </tr>
 <tr class="pl-tr">
@@ -288,24 +319,20 @@ def mk_pl_newrecords(plst):                 # 新譜
                 "timestamp": mtime
             })
         return result
+    
     recent_mp4i = list_recent_mp4(karapath, limit=100)
     mk_plheader(plst)
     nocnt = 1
     html = ['<table class="pl-table">']
     for mp4i in recent_mp4i:
-        mp4f = karapath + "/" + mp4i['path']
+        mp4f = karapath + mp4i['path']
         assf = str(Path(mp4f).with_suffix(".ass"))
         dt = datetime.fromtimestamp(mp4i["timestamp"])
         comment = "更新日時:" + dt.strftime("%Y-%m-%d %H:%M:%S")
-        icon = "images/noimg.png"
-        if os.path.exists(assf):
-            sinfo = read_ass_sinfo(assf)
-            icon = get_imgurl(sinfo)
-            comment = "<br>".join(get_songcomment(mp4f))
-            html.append(
-                html_index_tr(nocnt,icon,mp4i['path'],comment)
-            )
-        nocnt += 1
+        sinfo = read_ass_sinfo(assf)
+        img = get_imgurl(sinfo,mp4f)
+        comment += "<br>".join(get_songcomment(mp4f))
+        html.append(html_index_tr(nocnt,img,mp4i['path'],comment))
     html.append("</table>")
     with open(htmlfhead + plst['name'] + ".html", 'a', encoding='utf-8') as f:
         f.write("".join(html))
@@ -376,8 +403,8 @@ def mk_pl_mochilist(plst):                  # 過去回セットリスト
                         emoji = '[ℹ️ファイルパス修正]'
                     assf = str(Path(fname).with_suffix(".ass"))
                     comment = emoji + "<br>".join(get_songcomment(fname))
-                    if os.path.exists(assf):
-                        img = get_imgurl(read_ass_sinfo(assf))
+                    sinfo = read_ass_sinfo(assf)
+                    img = get_imgurl(sinfo,fname)
                     no = f"<center>{nocnt}</center>{date}"
                     fa.write(html_index_tr(no,img,line,comment))
                     nocnt += 1
@@ -487,7 +514,21 @@ def mk_pl_ytplist(plst):                    # youtubeプレイリスト（フォ
         f.write("".join(html))
     mk_plfooter(plst)
 
-
+def mk_thumbimgs(plst):  # vididがない動画にthumb_imgs付与、mk_pl_index（_no = 0）の時に実行
+    for thumbdir in plst['thumbdirs']:
+        based = karapath + '/' + thumbdir
+        for mp4p in Path(based).rglob("*.mp4"):
+            mp4f = str(mp4p).replace("\\", "/")
+            if any(keyword in mp4f
+                   for keyword in plst['exclude_keywords']):
+                continue
+            assf = mp4f.rsplit(".", 1)[0] + ".ass"
+            sinfo = read_ass_sinfo(assf)
+            if get_imgurl(sinfo, mp4f) != NOIMG:
+                continue
+            print(f"サムネイル作成...{get_thumbimgf(mp4f)}")
+            make_thumbimg(mp4f, get_thumbimgf(mp4f))
+    return
 
 # メインループ
 with open("mochi2_makepi.json", "r", encoding="utf-8") as f:
@@ -497,6 +538,7 @@ for i, plst in enumerate(plists):
     print(f"プレイリスト:{plst['name']} pltype={plst['pltype']}")
     if plst['pltype'] == "index":
         mk_pl_index(plst)
+        mk_thumbimgs(plst)
     elif plst['pltype'] == "newrecords":
         mk_pl_newrecords(plst)
     elif plst['pltype'] == "uta-net":

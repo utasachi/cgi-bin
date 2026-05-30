@@ -4,8 +4,11 @@
         "pltype": "index",
         "icon": "images/youtubeプレイリストindex.png",
         "comment1": "もちからHDDにあるプレイリストの一覧です。順次追加していきます！",
-        "comment2": "プレイリストiconの一部は生成AIを使用しております" }
-    ,
+        "comment2": "プレイリストiconの一部は生成AIを使用しております",
+
+        "thumbdirs" : ["/持込", "/MV_スクロール歌詞"],
+        "exclude_keywords": ["20229999", "成田", "ゆーふーりん", "ゆーふうりん"] }
+        ,
     {   "_no": 1,
         "name": "【うたさちHDD】新譜一覧" ,
         "pltype": "newrecords",

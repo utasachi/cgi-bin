@@ -20,6 +20,7 @@ MPCBEEXE = "C:/mochikara2/MPC-BE/mpc-be64.exe"
 LSTF = "../htdocs/mochilist.txt"
 HEADER = "../htdocs/mochi2_HEADER.shtml"
 FOOTER = "../htdocs/mochi2_README.shtml"
+NOIMG = "/プレイリスト/images/noimg.png"
 
 uri = os.environ.get("REQUEST_URI", "/").split("?", 1)[0]
 unquri = unquote(uri)
@@ -31,6 +32,12 @@ fname = f"{os.environ['DOC_ROOT']}{unquri}"
 assf = str(Path(fname).with_suffix(".ass"))
 txtf = str(Path(fname).with_suffix(".txt"))
 extf = os.path.splitext(fname)[1].lstrip(".")
+thumbimgf = (
+    fname.replace('\\', '/')
+         .replace('/', '_')
+         .replace(':_karaoke_', ':/karaoke/プレイリスト/thumbimgs/')
+         .rsplit('.', 1)[0] + '.jpg'
+)
 
 # 関数
 def read_text(path):
@@ -280,6 +287,24 @@ def emoji(fname):                   # 絵文字分類表示
         emoji = '🎵'
     return emoji
 
+def make_thumbimg(mp4f, thumbimg, sec = "30"):  
+    thumbimg = Path(thumbimg)
+    thumbimg.parent.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        "../bin/ffmpeg", "-y",  # 上書き
+        "-ss", sec,             # 30秒位置
+        "-i", str(mp4f),
+        "-frames:v", "1",       # 1フレームだけ
+        "-q:v", "2",            # jpg品質
+        str(thumbimg),
+    ]
+    subprocess.run( cmd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=True,
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+
 # ヘッダ設定
 form = cgi.FieldStorage()
 meta_add = ""
@@ -381,13 +406,14 @@ else:
 '''
     sinfo_txt += f'ℹ️楽曲情報:[{extf}]'
     ### assある場合
+    vidid = ""
     if os.path.exists(assf):
         ass_txt,enc = read_text(assf)
         sinfo_txt += f" [ass({enc})]"
         if "[テンプレート]" in ass_txt:
             sinfo_txt += " [スクロール歌詞]"
         kashi = []
-        vidid = loopvid = videoid = ""
+        loopvid = videoid = ""
         for line in ass_txt.splitlines():
             # 画像できれば読む
             if line.startswith(";loopvid") : loopvid = line.split("=", 1)[1]
@@ -401,10 +427,24 @@ else:
                     kashi.append(text)
         if   loopvid : vidid = loopvid
         elif videoid : vidid = videoid
-        if vidid:
-            vidid_url = f'https://i.ytimg.com/vi/{vidid}/mqdefault.jpg'
-            icon_img = f'<img class="pl-img" src="{vidid_url}">'
         kashi_txt = "\n".join(kashi)
+    if vidid:
+        vidid_url = f'https://i.ytimg.com/vi/{vidid}/mqdefault.jpg'
+        icon_img = f'<img class="pl-img" src="{vidid_url}">'
+    elif os.path.exists(thumbimgf):
+        thumb_url = thumbimgf.split(':/karaoke', 1)[1]
+        icon_img = f'<img class="pl-img" src="{thumb_url}">'
+    # リアルタイム作成処理
+    elif fname.endswith('.mp4'):
+        make_thumbimg(fname,thumbimgf)
+        if os.path.exists(thumbimgf):
+            thumb_url = thumbimgf.split(':/karaoke', 1)[1]
+            icon_img = f'<img class="pl-img" src="{thumb_url}">'
+        else:
+            icon_img = f'<img class="pl-img" src="{NOIMG}">'
+    else:
+        icon_img = f'<img class="pl-img" src="{NOIMG}">'
+
 ### txtある場合
     if os.path.exists(txtf):
         sinfo_txt += " [txt]"
