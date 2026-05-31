@@ -435,7 +435,7 @@ else:
         thumb_url = thumbimgf.split(':/karaoke', 1)[1]
         icon_img = f'<img class="pl-img" src="{thumb_url}">'
     # リアルタイム作成処理
-    elif fname.endswith('.mp4'):
+    elif fname.endswith('.mp4') and len(fname) < 100:
         make_thumbimg(fname,thumbimgf)
         if os.path.exists(thumbimgf):
             thumb_url = thumbimgf.split(':/karaoke', 1)[1]
