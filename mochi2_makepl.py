@@ -3,7 +3,7 @@
 # pip install requests
 # pip install ytmusicapi
 debug_idxs = set()    # 全部走行
-debug_idxs = {0}   # 特定走行モード
+debug_idxs = {4}   # 特定走行モード
 
 import os, sys, json, re, glob, requests, pickle, shutil
 from urllib.parse import unquote
@@ -538,7 +538,7 @@ for i, plst in enumerate(plists):
     print(f"プレイリスト:{plst['name']} pltype={plst['pltype']}")
     if plst['pltype'] == "index":
         mk_pl_index(plst)
-        mk_thumbimgs(plst)
+#        mk_thumbimgs(plst)
     elif plst['pltype'] == "newrecords":
         mk_pl_newrecords(plst)
     elif plst['pltype'] == "uta-net":
