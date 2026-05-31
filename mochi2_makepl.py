@@ -88,7 +88,7 @@ def get_imgurl(sinfo, mp4f = None):           # youtubeの画像urlを返す
     if vidid:
         return "https://i.ytimg.com/vi/" + vidid + "/mqdefault.jpg"
     if os.path.exists(get_thumbimgf(mp4f)):
-        return get_thumbimgf(mp4f).replace(karapath,"")
+        return get_thumbimgf(mp4f).replace(htmlfhead,"")
     return NOIMG
 
 def get_songcomment(fname):
