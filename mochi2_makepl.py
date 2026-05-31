@@ -3,7 +3,7 @@
 # pip install requests
 # pip install ytmusicapi
 debug_idxs = set()    # 全部走行
-# debug_idxs = {1,4}   # 特定走行モード
+# debug_idxs = {0,5}   # 特定走行モード
 
 import os, sys, json, re, glob, requests, pickle, shutil
 from urllib.parse import quote
@@ -243,8 +243,8 @@ def html_sinfo_tr(nocnt, ckfiles, views = 0, plorder = -1):  # sinfo行情報作
     name_style = ckfiles[plorder]
     if sinfo:
         img = get_imgurl(sinfo,ckfiles[plorder])
-        name_style  = f'{sinfo.get("title","")} ／ {sinfo.get("artist","")}'
-        name_style += f'<div class="pl-smain">{sinfo.get("tieup","")} '
+        name_style  = f'{sinfo.get("title","")} ／ {sinfo.get("artist","")}<br>'
+        name_style += f'{sinfo.get("tieup","")} '
         utaid = sinfo.get("utaid")
         vidid = sinfo.get("vidid")
         name_style += f'表示回数:{views:,}回 '
@@ -252,7 +252,6 @@ def html_sinfo_tr(nocnt, ckfiles, views = 0, plorder = -1):  # sinfo行情報作
             name_style += f'[<a class="link-hover" href="{url_utanet(utaid)}">🎼uta-net</a>] '
         if vidid:
             name_style += f'[<a class="link-hover" href="{url_youtube(vidid)}">▶️youtube</a>] '
-        name_style += f'</div>'
     comment_style = '<table class="pl-table">'
     mvlink = 'class="mvlink"'
     r = 1
@@ -275,10 +274,10 @@ def html_sinfo_tr(nocnt, ckfiles, views = 0, plorder = -1):  # sinfo行情報作
   <td rowspan=2 class="pl-no">{nocnt}</td>
   <td rowspan=2 class="pl-icon-hover"><a {mvlink} href="{quote(ckfiles[-1], safe="/")}">
     <img class="pl-img" src="{img}"></a></td>
-  <td class="pl-main0">{name_style}</td>
+  <td class="pl-main0">{comment_style}</td>
 </tr>
 <tr class="pl-tr">
-  <td class="pl-main0">{comment_style}</td>
+  <td class="pl-comment">{name_style}</td>
 </tr>
 '''
 

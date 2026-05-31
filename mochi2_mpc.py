@@ -415,11 +415,16 @@ else:
         if "[テンプレート]" in ass_txt:
             sinfo_txt += " [スクロール歌詞]"
         kashi = []
-        loopvid = videoid = ""
+        loopvid = videoid = url_utanet = url_youtube = "" 
         for line in ass_txt.splitlines():
             # 画像できれば読む
+            if line.startswith(";vidid"):
+                vidid = line.split("=", 1)[1]
+                url_youtube = f'https://www.youtube.com/watch?v={vidid}'
+            if line.startswith(";utaid"):
+                utaid = line.split("=", 1)[1]
+                url_utanet = f'https://www.uta-net.com/song/{utaid}/'
             if line.startswith(";loopvid") : loopvid = line.split("=", 1)[1]
-            if line.startswith(";vidid")   : vidid   = line.split("=", 1)[1]
             if line.startswith(";videoId") : videoid = line.split("=", 1)[1]
             if line.startswith("Dialogue:"):
                 parts = line.split(",", 9)  # 9回だけ分割 → 10番目以降がまとめて取れる
@@ -427,6 +432,10 @@ else:
                     text = parts[9]
                     text = re.sub(r"\{.*?\}", "", text)  # {...} を削除
                     kashi.append(text)
+        if url_utanet:
+            sinfo_txt += f'[<a class="link-hover" href="{url_utanet}">🎼uta-net</a>] '
+        if url_youtube:
+            sinfo_txt += f'[<a class="link-hover" href="{url_youtube}">▶️youtube</a>] '
         if   loopvid : vidid = loopvid
         elif videoid : vidid = videoid
         kashi_txt = "\n".join(kashi)
