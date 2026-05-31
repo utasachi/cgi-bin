@@ -3,10 +3,10 @@
 # pip install requests
 # pip install ytmusicapi
 debug_idxs = set()    # 全部走行
-debug_idxs = {1,4}   # 特定走行モード
+# debug_idxs = {1,4}   # 特定走行モード
 
 import os, sys, json, re, glob, requests, pickle, shutil
-from urllib.parse import unquote
+from urllib.parse import quote
 from pathlib import Path
 from datetime import datetime
 from rapidfuzz import process, fuzz
@@ -219,8 +219,10 @@ def html_index_tr(nocnt, icon, name, comment):  # 行情報作成
     return f'''
 <tr class="pl-tr">
   <td rowspan=2 class="pl-no">{nocnt}</td>
-  <td rowspan=2 class="pl-icon-hover"><a {mvlink} href="{name}"><img class="pl-img" src="{icon}"></a></td>
-  <td class="pl-main1-hover"><a {mvlink} href="{name}"><b>{name_style}</b></a></td>
+  <td rowspan=2 class="pl-icon-hover"><a {mvlink} href="{quote(name, safe="/")}">
+    <img class="pl-img" src="{icon}"></a></td>
+  <td class="pl-main1-hover"><a {mvlink} href="{quote(name, safe="/")}">
+    <b>{name_style}</b></a></td>
 </tr>
 <tr class="pl-tr">
   <td class="pl-comment">{comment}</td>
@@ -262,7 +264,7 @@ def html_sinfo_tr(nocnt, ckfiles, views = 0, plorder = -1):  # sinfo行情報作
             ckfile2 = ckfile
         comment_style += f'''\
 <tr class="pl-tr"><td class="pl-main{r}-hover">
-<a {mvlink} href="{ckfile}"><div class="normal-blue">{emoji(ckfile)} {ckfile1}</div>
+<a {mvlink} href="{quote(ckfile, safe="/")}"><div class="normal-blue">{emoji(ckfile)} {ckfile1}</div>
 <span class="mid">{ckfile2}</span>
 </a></td></tr>
 '''
@@ -271,7 +273,7 @@ def html_sinfo_tr(nocnt, ckfiles, views = 0, plorder = -1):  # sinfo行情報作
     return f'''
 <tr class="pl-tr">
   <td rowspan=2 class="pl-no">{nocnt}</td>
-  <td rowspan=2 class="pl-icon-hover"><a {mvlink} href="{ckfiles[-1]}">
+  <td rowspan=2 class="pl-icon-hover"><a {mvlink} href="{quote(ckfiles[-1], safe="/")}">
     <img class="pl-img" src="{img}"></a></td>
   <td class="pl-main0">{name_style}</td>
 </tr>

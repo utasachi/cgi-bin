@@ -3,9 +3,8 @@
 # pip install mutagen
 # pip install chardet
 # pip install rapidfuzz
-import os, sys, cgi, subprocess, random, time, shutil, re, difflib
-from urllib.parse import unquote
-from urllib.parse import urlsplit
+import os, sys, cgi, subprocess, random, time, shutil, re
+from urllib.parse import quote, unquote, urlsplit
 from pathlib import Path
 from mutagen.id3 import ID3
 from mutagen.mp3 import MP3
@@ -23,7 +22,12 @@ FOOTER = "../htdocs/mochi2_README.shtml"
 NOIMG = "/プレイリスト/images/noimg.png"
 
 uri = os.environ.get("REQUEST_URI", "/").split("?", 1)[0]
-unquri = unquote(uri)
+splituri = urlsplit(uri)
+uripath   = unquote(splituri.path)
+uriquery  = splituri.query
+unquri    = unquote(uri)
+urifolder, urifile = uripath.rsplit("/", 1)
+
 intermission = os.environ['INTERMISSION']
 track_chg = os.environ['TRACK_CHG']
 key_chg = os.environ['KEY_CHG']
@@ -339,8 +343,6 @@ if not os.path.exists(fname):
     exit()
 
 # 動画登録確認
-uripath = urlsplit(unquri).path
-urifolder, urifile = uripath.rsplit("/", 1)
 icon_img = sinfo_txt = mp3bgv_txt = offv_txt = confirm_txt = kashi_txt = ""
 
 ## 動画登録中
@@ -433,13 +435,13 @@ else:
         icon_img = f'<img class="pl-img" src="{vidid_url}">'
     elif os.path.exists(thumbimgf):
         thumb_url = thumbimgf.split(':/karaoke', 1)[1]
-        icon_img = f'<img class="pl-img" src="{thumb_url}">'
+        icon_img = f'<img class="pl-img" src="{quote(thumb_url)}">'
     # リアルタイム作成処理
     elif fname.endswith('.mp4') and len(fname) < 100:
         make_thumbimg(fname,thumbimgf)
         if os.path.exists(thumbimgf):
             thumb_url = thumbimgf.split(':/karaoke', 1)[1]
-            icon_img = f'<img class="pl-img" src="{thumb_url}">'
+            icon_img = f'<img class="pl-img" src="{quote(thumb_url)}">'
         else:
             icon_img = f'<img class="pl-img" src="{NOIMG}">'
     else:
