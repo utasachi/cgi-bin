@@ -12,7 +12,6 @@ from datetime import datetime
 from rapidfuzz import process, fuzz
 from ytmusicapi import YTMusic
 sys.stdout.reconfigure(encoding='utf-8')
-uri = os.environ.get("REQUEST_URI", "/").split("?", 1)[0]
 os.chdir(Path(__file__).resolve().parent)
 print("Content-Type: text/html; charset=UTF-8\r\n")
 
@@ -532,7 +531,7 @@ def mk_thumbimgs(plst):  # vididがない動画にthumb_imgs付与、mk_pl_index
     return
 
 # メインループ
-with open("mochi2_makepi.json", "r", encoding="utf-8") as f:
+with open("mochi2_makepl.json", "r", encoding="utf-8") as f:
     plists = json.load(f)
 for i, plst in enumerate(plists):
     if debug_idxs and i not in debug_idxs: continue
