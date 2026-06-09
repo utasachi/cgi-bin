@@ -1,14 +1,25 @@
 #!c:/mochikara2/.venv/Scripts/pythonw.exe
 # -*- coding: utf-8 -*-
-debug_idxs = set()    # 全部走行
-debug_idxs = {6}   # 特定走行モード
+debug_idxs = set()  # 全部走行
+debug_idxs = {9}    # 特定走行モード
+uwdiag = True       # 一行ごとにuwscのダイアログで効いてくるやつ
 
-import os, sys, json, re, requests, pickle, html, subprocess, glob, configparser
+import os, sys, json, re, requests, pickle, html, subprocess, glob, configparser,shutil
+from urllib.parse import quote, parse_qs
 from pathlib import Path
 sys.stdout.reconfigure(encoding='utf-8')
 os.chdir(Path(__file__).resolve().parent)
-print("Content-Type: text/html; charset=UTF-8\r\n")
 
+# 定義
+MPCBEEXE = "C:/mochikara2/MPC-BE/mpc-be64.exe"
+LSTF = "../htdocs/mochilist.txt"
+HEADER = "../htdocs/mochi2_HEADER.shtml"
+FOOTER = "../htdocs/mochi2_README.shtml"
+NOIMG = "/プレイリスト/images/noimg.png"
+MOCSCEXE = r"..\ahk\MochiutaSC\MochiutaSC.exe"
+MOCSCASS = r"..\..\htdocs\moass_header.ass"
+
+uri = os.environ.get("REQUEST_URI", "/").split("?", 1)[0]
 karapath = bgvpath = ""
 with open("../Apache24/conf/httpd-mochikara.conf", encoding="utf-8") as f:
     for line in f:
@@ -18,10 +29,16 @@ if not karapath or not bgvpath:
     raise RuntimeError("karapath か bgvpathの設定がない")
 scrbased = karapath + "/MV_スクロール歌詞/"
 dlbased  = bgvpath  + "/★未分類/"
-downloads = Path.home() / "Downloads"
-ytcookie = downloads / "www.youtube.com_cookies.txt"
+ytcookie = "../tmp/www.youtube.com_cookies"
 
 # 関数
+def uwsc_dialog(msg="継続しますか？"):                  # 継続ダイアログ
+    if not uwdiag:
+        return
+    res = subprocess.run(["../bin/UWSC.exe", "../bin/uwsc_vk.uws", "msg",msg])
+    if res.returncode != 1:
+        exit(0)
+
 def readini(section, key, filename, default=""):        # configparser版readini
     cfg = configparser.ConfigParser()
     cfg.read(filename, encoding="utf-8")
@@ -81,7 +98,7 @@ def rep(s):                         # 文字列置き換え
         '@': '＠',  '　': ' ', ' ': ' ',   '+': '＋',
         'é': 'e',   '&': '＆', '〜': '～'
     }
-    s = html.unescape(s)
+    s = html.unescape(s).replace('\xa0', ' ')
     for k, v in replacements.items():
         s = s.replace(k, v)
     # s = normalize_filename(s)
@@ -108,6 +125,21 @@ def get_fname(basedir, tag, ext="mp4",mmtype=""):   # tagからファイルパ�
     else:
         fname = f"{basedir}/{tag['title']}／{artist}{mtype}.{ext}"
     return fname
+
+def get_fdir_fname(basedir, tag, ext="mp4", mmtype=""): # tagからファイルパス、フォルダも生成
+    subdir = tag.get('subdir','')
+    if not subdir:
+        year = tag.get('year', '')
+        try:
+            y = int(year)
+            if y <= 1989:   subdir = '1989以前'
+            elif y <= 1999: subdir = '1990-1999'
+            elif y <= 2009: subdir = '2000-2009'
+            elif y <= 2019: subdir = '2010-2019'
+            else:           subdir = year
+        except (TypeError, ValueError):
+            subdir = year
+    return get_fname(basedir + subdir,tag,ext,mmtype)
 
 def search_utanet(utaid):           # 歌ネットタグ取得
     requrl = "https://www.uta-net.com/song/" + utaid + "/"
@@ -244,7 +276,7 @@ def write_ass_diag(sinfo,assf):                  # ass diag部分記入
         artist = shorten_artist(sinfo['artist'],56)
     if len(artist) > 32:
         diag[';f02'] = diag[';f02'].replace('sInfo', 'sRuby')
-    lines.append(diag[';f02'] + artist +"\n")      
+    lines.append(diag[';f02'] + artist +"\n")
     if diag.get(';f03') and sinfo.get('tieup'):
         lines.append(diag[';f03'] + sinfo['tieup'] +"\n")
         lines.append(diag[';f04'] + sinfo['year'] +"\n")
@@ -308,8 +340,7 @@ def mk_loopedit(audf, vidf, mp4f):              # ffmpeg loopedit 本体
 
 def mk_1080p(vidf, mp4f):                       # 1080p 本体
     subprocess.run(
-        [
-            "../bin/ffmpeg", "-y", "-i", vidf, "-vf",
+        [   "../bin/ffmpeg", "-y", "-i", vidf, "-vf",
             "scale=1920:1080:force_original_aspect_ratio=decrease,"
             "pad=1920:1080:0:(oh-ih)/2:black",              # 左端寄せ
 #            "pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black",     # 中央寄せ
@@ -337,18 +368,38 @@ def get_youtube_json(vidid):                    # youtubeから曲情報取得 �
         print("output=", repr(e.output))
         return None
 
+def get_pl_vidids(plid):
+    try:
+        cmd = [
+            "yt-dlp",
+            "--flat-playlist",
+            "--dump-single-json",
+            f"https://www.youtube.com/playlist?list={plid}",
+        ]
+        data = json.loads(subprocess.check_output(cmd, text=True, encoding="utf-8"))
+        return [ e["id"]
+            for e in data.get("entries", [])
+            if e and "id" in e ]
+    except subprocess.CalledProcessError as e:
+        print("output=", repr(e.output))
+        return None
+
 def get_youtube_info(vidid):                    # youtube曲情報取得(まとめ)
     j = get_youtube_json(vidid)
     if not j:
         return None
     formats = j.get("formats", [])
     f = max(formats, key=lambda x: x.get("height") or 0) if formats else {}
-    width = f.get("width") or 0
+    width  = f.get("width") or 0
     height = f.get("height") or 0
+    track  = j.get("track") or j.get("alt_title") or j.get("title")
+    artist = j.get("artist") or j.get("creator") or j.get("channel") or j.get("uploader")
     yinfo = {
-        "title":      j.get("title", ""),
+        "title":      rep(j.get("title", "")),
         "duration":   j.get("duration", 0),
         "view_count": j.get("view_count", 0),
+        "track":      track,
+        "artist":     artist,
         "width":      width,
         "height":     height,
         "aspect":     width / height if height else 0,
@@ -357,8 +408,7 @@ def get_youtube_info(vidid):                    # youtube曲情報取得(まと�
             or j.get("filesize_approx")
             or f.get("filesize")
             or f.get("filesize_approx")
-            or 0 ),
-    }
+            or 0 ), }
     return yinfo
 
 def make_mp4_ass_single(plst,sinfo,vidid,mtype,vidname):  
@@ -369,6 +419,8 @@ def make_mp4_ass_single(plst,sinfo,vidid,mtype,vidname):
         sinfo['mtype'] = "THE FIRST TAKE"
         sinfo['ystart'] = "720"
         sinfo['kstyle'] = "2"
+    if plst.get('folder',''):
+        sinfo['subdir'] = plst['folder']
     mp4f = get_fname(dldir,sinfo,"mp4")
     assf = get_fname(dldir,sinfo,"ass")
     if not os.path.exists(mp4f):
@@ -384,6 +436,8 @@ def make_mp4_ass_loopedit(sinfo,vidid,loopvid,mtype,vidname):
     sinfo['loopvid'] = loopvid
     sinfo['vidname'] = vidname
     sinfo['mtype']   = mtype
+    if plst.get('folder',''):
+        sinfo['subdir'] = plst['folder']
     audf = get_fname(dldir,sinfo,"aud.mp4")
     vidf = get_fname(dldir,sinfo,"vid.mp4")
     mp4f = get_fname(dldir,sinfo,"mp4")
@@ -405,6 +459,8 @@ def make_mp4_ass_loopedit(sinfo,vidid,loopvid,mtype,vidname):
 def make_mp4_ass_1080p(sinfo,vidid,mtype):  
     sinfo['vidid']   = vidid
     sinfo['mtype']   = mtype
+    if plst.get('folder',''):
+        sinfo['subdir'] = plst['folder']
     vidf = get_fname(dldir,sinfo,"vid.mp4")
     mp4f = get_fname(dldir,sinfo,"mp4")
     assf = get_fname(dldir,sinfo,"ass")
@@ -419,8 +475,8 @@ def make_mp4_ass_1080p(sinfo,vidid,mtype):
         write_ass_sinfo(sinfo,assf)
         write_ass_diag(sinfo,assf)            
 
-def not_pettern(plst,sinfo,yinfo0,yinfo1,yinfo2):
-    print("情報取得失敗 or パターンにあてはまらない")
+def trace_nopat_yinfo(plst,sinfo,yinfo0=None,yinfo1=None,yinfo2=None):
+    print("youtube情報取得失敗 or パターンにあてはまらない")
     print("  yinfo0----------")
     if yinfo0:
         for k, v in yinfo0.items():
@@ -436,17 +492,27 @@ def not_pettern(plst,sinfo,yinfo0,yinfo1,yinfo2):
     tini = dlbased + plst['name'] + "/!mochi2err.txt"
     utaid = sinfo.get('utaid')
     url = f"https://www.uta-net.com/song/{utaid}/"
-    writeini("error",utaid,url + " " + sinfo.get('title'),tini)
-#    raise RuntimeError("情報取得失敗 or パターンにあてはまらない")
+    writeini("no_yinfo",utaid,url + " " + sinfo.get('title'),tini)
+    return False
+
+def trace_nopat_utaid(plst,vidid,yinfo0=None):
+    print("uta-net情報取得失敗")
+    print("  yinfo0----------")
+    if yinfo0:
+        for k, v in yinfo0.items():
+            print(f"   {k}: {v}")
+    tini = dlbased + plst['name'] + "/!mochi2err.txt"
+    url = f"https://www.youtube.com/watch?v={vidid}"
+    writeini("no_utaid",vidid,url + " " + yinfo.get('title'),tini)
     return False
 
 def make_mp4_ass(plst,sinfo,vidids):                 # ダウンロードパターン分け(ここが肝)
     yinfo0 = get_youtube_info(vidids[0])
     # パターン0 yinfo0の時点でダメな場合は返してしまう
     if not yinfo0:
-        return not_pettern(plst,sinfo,yinfo0,None,None)
+        return trace_nopat_yinfo(plst,sinfo,yinfo0)
     if "ピアノ楽譜" in yinfo0.get('title'):
-        return not_pettern(plst,sinfo,yinfo0,None,None)
+        return trace_nopat_yinfo(plst,sinfo,yinfo0)
     # パターン1 mv1 最初の候補がすべてかねそろえていれば
     # パターン1除外キーワードあり
     p1exkeywd = ["静止画","official audio"]
@@ -507,45 +573,298 @@ def make_mp4_ass(plst,sinfo,vidids):                 # ダウンロードパタ�
         print(f" パターン８ aud={vidids[1]} utaid={utaid}")
         make_mp4_ass_1080p(sinfo,vidids[1],"album art")
         return True
+    return trace_nopat_yinfo(plst,sinfo,yinfo0,yinfo1,yinfo2)
 
-    return not_pettern(plst,sinfo,yinfo0,yinfo1,yinfo2)
+def search_site(s, n=0):                # キーワードで歌ネット検索（n番目のhit）
+    FENRIR = "https://search.fenrir-inc.com/?hl=ja&channel=sleipnir_s&safe=off&lr=all&fr=ss&q="
+    requrl = FENRIR + "歌ネット 歌詞ページ " + quote(s)
+    lines = requests.get(requrl).text.splitlines()
+    hits = []
+    for line in lines:
+        if "https://www.uta-net.com/song/" in line:
+            m = re.search(r'/song/(\d+)/', line)
+            if m:
+                hits.append(m.group(1))
+        if "https://www.uta-net.com/movie/" in line:
+            m = re.search(r'/movie/(\d+)/', line)
+            if m:
+                hits.append(m.group(1))
+    return hits[n] if n < len(hits) else ""
 
-# メインループ
-scr_utaids = collect_ids("utaid")
-with open("mochi2_makepl.json", "r", encoding="utf-8") as f:
-    plists = json.load(f)
-for i, plst in enumerate(plists):
-    if debug_idxs and i not in debug_idxs: continue
-    if not plst.get('download'): continue
-    print(f"プレイリスト:{plst['name']} pltype={plst['pltype']}")
-    dldir = dlbased + plst['name'] + "/"
-    Path(dldir).mkdir(parents=True, exist_ok=True)
+def open_text_auto(path):
+    for enc in ( "utf-8-sig", "cp932", "utf-16", "utf-16-le", "utf-16-be", ):
+        try:
+            with open(path, encoding=enc) as f:
+                f.read()
+            return open(path, encoding=enc)
+        except UnicodeDecodeError:
+            pass
+    raise ValueError(f"decode failed: {path}")
 
-# 歌ネット
-    if plst['pltype'] == "uta-net":
-        page = requests.get(plst['url']).text
-        pattern = re.compile(r'<a href="/song/(\d+)/">(.*?)</a>\s*/\s*(.*?)</td>')
-        for utaid, pgttl, pgart in pattern.findall(page):
-            if int(utaid) < 300000:     # 古い曲除外
+def read_ass_sinfo(assf):               # assのsonginfoを取得
+    if not os.path.exists(assf):
+        return None
+    sinfo = {}
+    in_sinfo = False
+    with open_text_auto(assf) as f:
+        for line in f:
+            if line.startswith(";[Song Info]"):
+                in_sinfo = True
                 continue
-            ckfiles = scr_utaids.get(utaid)
-            if ckfiles:
-                continue                # ckfilesにあれば除外
-            print(f"ckecking... https://www.uta-net.com/song/{utaid}/ {pgttl} {pgart}")
-            vidids = get_vidids(utaid)
-            if not vidids:
-                print(f" no vidids!")
-                continue                # 関連動画なければ除外
-            sinfo = search_utanet(utaid)
-            mp4s = glob.glob(glob.escape(get_fname(dldir,sinfo)[:-4]) + "*.mp4")
-            asss = glob.glob(glob.escape(get_fname(dldir,sinfo)[:-4]) + "*.ass")
-            if mp4s and asss:
-                print(f" 作成済み {sinfo.get('title')}")
-                continue                # 既に作成済みなら除外
-            make_mp4_ass(plst,sinfo,vidids)
+            if in_sinfo and line.startswith(";["):
+                break
+            if in_sinfo and line.startswith(";"):
+                text = line[1:].strip()
+                if "=" in text:
+                    key, value = text.split("=", 1)
+                    sinfo[key] = value
+    return sinfo
 
-            # 継続ダイアログ
-            # res = subprocess.run( ["../bin/UWSC.exe", "../bin/uwsc_vk.uws", "msg", "継続しますか？"])
-            # print(res.returncode)
-            # if res.returncode != 1:
-            #     exit(0)
+def get_imgurl(sinfo, mp4f = None):           # youtubeの画像urlを返す
+    vidid = ""
+    if sinfo and sinfo.get('loopvid'):    vidid = sinfo['loopvid']
+    elif sinfo and sinfo.get('vidid'):    vidid = sinfo['vidid']
+    elif sinfo and sinfo.get('videoId'):  vidid = sinfo['videoId']
+    if vidid:
+        return "https://i.ytimg.com/vi/" + vidid + "/mqdefault.jpg"
+    return NOIMG
+
+def emoji(fname):                   # 絵文字分類表示
+    emoji = '🎞️'
+    if 'mv.' in fname.lower():
+        emoji = '🎬'
+    elif 'youtube.' in fname.lower():
+        emoji = '📺'
+    elif 'first take' in fname.lower():
+        emoji = '📹'
+    elif '.mp3' in fname.lower():
+        emoji = '🎵'
+    return emoji
+
+def a_cmdlink(c,t,msg,p1):                      # コマンドリンク作成
+    if msg:
+        return f'[<a href="?c={c}&p1={quote(p1, safe="/")}" onclick="return confirm(\'{msg}\')";>{t}</a>]\n'
+    else:
+        return f'[<a href="?c={c}&p1={quote(p1, safe="/")}">{t}</a>]\n'
+
+def html_tr(nocnt,based,mp4f):                  # スクロール歌詞編集
+        mp4i = mp4f.replace(based,'')
+        name_style = mp4i
+        if "/" in mp4i:
+            i = mp4i.rfind("/")
+            name_style = f'<div class="pl-smain">{emoji(mp4i)} {mp4i[:i+1]}</div>{mp4i[i+1:]}'
+        assf = str(Path(mp4f).with_suffix(".ass"))
+        sinfo = read_ass_sinfo(assf)
+        comment = sinfo
+        mvlink = 'class="mvlink"'
+        icon = get_imgurl(sinfo)
+# ここにコマンドリンクを羅列
+        cmd_style  = a_cmdlink('mochiutasc',"編集","",mp4i)
+        cmd_style += a_cmdlink('edit_ass',"ass","",mp4i)
+        cmd_style += a_cmdlink('edit_ini',"ini","",mp4i)
+        cmd_style += a_cmdlink('delete',"🗑️削除",f"🗑️削除してもよろしいですか？\\n{mp4i}",mp4i)
+        cmd_style += a_cmdlink('deploy',"📦配置",f"📦配置してもよろしいですか？\\n{mp4i}",mp4i)
+        print (f'''
+    <tr class="pl-tr">
+    <td rowspan=3 class="pl-no">{nocnt}</td>
+    <td rowspan=3 class="pl-icon-hover">
+        <a {mvlink} href="?c=play&p1={quote(mp4i, safe="/")}">
+        <img class="pl-img" src="{icon}"></a></td>
+    <td class="pl-main1-hover">
+        <a {mvlink} href="?c=play&p1={quote(mp4i, safe="/")}">
+        <b>{name_style}</b></a></td>
+    </tr>
+    <tr class="pl-tr"><td class="pl-main2-hover">
+{cmd_style}
+    </td></tr>
+    <tr class="pl-tr"><td class="pl-comment">{comment}</td></tr>
+''')
+
+# メイン
+# コマンドラインの場合
+if uri == "/":
+    scr_utaids = collect_ids("utaid")
+    with open("mochi2_makepl.json", "r", encoding="utf-8") as f:
+        plists = json.load(f)
+    for i, plst in enumerate(plists):
+        if debug_idxs and i not in debug_idxs: continue
+        if not plst.get('download'): continue
+        print(f"プレイリスト:{plst['name']} pltype={plst['pltype']}")
+        dldir = dlbased + plst['name'] + "/"
+        Path(dldir).mkdir(parents=True, exist_ok=True)
+
+    # 歌ネット
+        if plst['pltype'] == "uta-net":
+            page = requests.get(plst['url']).text
+            pattern = re.compile(r'<a href="/song/(\d+)/">(.*?)</a>\s*/\s*(.*?)</td>')
+            for utaid, pgttl, pgart in pattern.findall(page):
+                if int(utaid) < 300000:     # 古い曲除外
+                    continue
+                if scr_utaids.get(utaid):
+                    continue                # ckfilesにあれば除外
+                print(f"ckecking... https://www.uta-net.com/song/{utaid}/ {pgttl} {pgart}")
+                if readini("no_sinfo",utaid,tini):
+                    print(f" 歌詞なし {vidid}")
+                    continue                # ★ no_utaid にあれば除外
+                vidids = get_vidids(utaid)
+                if not vidids:
+                    print(f" no vidids!")
+                    continue                # 関連動画なければ除外
+                sinfo = search_utanet(utaid)
+                mp4s = glob.glob(glob.escape(get_fname(dldir,sinfo)[:-4]) + "*.mp4")
+                asss = glob.glob(glob.escape(get_fname(dldir,sinfo)[:-4]) + "*.ass")
+                if mp4s and asss:
+                    print(f" 作成済み {sinfo.get('title')}")
+                    continue                # 既に作成済みなら除外
+                make_mp4_ass(plst,sinfo,vidids)
+                uwsc_dialog()
+
+    # ytplist FirstTakeなど
+        if plst['pltype'] == "ytplist":
+            # フォルダ指定があった場合はフォルダのなかでだけ探す
+            if plst.get('folder'):
+                scr_vidids = collect_ids("vidid",scrbased + plst.get('folder'))
+            else:
+                scr_vidids = collect_ids("vidid")           
+            vidids = get_pl_vidids(plst.get('plid'))
+            for vidid in vidids[:20]:
+                if scr_vidids.get(vidid):
+                    continue                # ckfilesにあれば除外
+                tini = dlbased + plst['name'] + "/!mochi2err.txt"
+                if readini("no_utaid",vidid,tini):
+                    print(f" 歌詞なし {vidid}")
+                    continue                # ★ no_utaid にあれば除外
+                yinfo = get_youtube_info(vidid)
+                if not yinfo:
+                    print(f" no yinfo vidid={vidid}")
+                    uwsc_dialog()
+                    continue
+                s = f"{yinfo.get('track') or ''} {yinfo.get('artist') or ''}"
+                s = s.replace("\xa0", " ").replace("-"," ").replace("/"," ").replace("  "," ")
+                s = s.replace("THE FIRST TAKE","")
+                print(f"ckecking... https://www.youtube.com/watch?v={vidid} , {repr(s)}")
+                utaid = search_site(s)
+                if not utaid:
+                    print(f" no utaid search={repr(s)}")
+                    uwsc_dialog()
+                    continue
+                print(f"ckecking... https://www.uta-net.com/movie/{utaid}/ , {repr(s)}")
+                sinfo = search_utanet(utaid)
+                print(f" track  yt={yinfo.get('track')}")
+                print(f"       uta={sinfo.get('title')}")
+                print(f" artist yt={yinfo.get('artist')}")
+                print(f"       uta={sinfo.get('artist')}")
+                # ★ここで照合のプロセス入れたほうがいい
+                # 存在チェック、ytplistの場合ほかのフォルダも見る
+                basepat = os.path.basename(get_fname(dldir, sinfo)[:-4])
+                mp4s = glob.glob(f"{glob.escape(dlbased)}/**/{glob.escape(basepat)}*.mp4", recursive=True)
+                asss = glob.glob(f"{glob.escape(dlbased)}/**/{glob.escape(basepat)}*.ass", recursive=True)
+                if mp4s and asss:
+                    print(f" 作成済み {sinfo.get('title')}")
+                    continue
+                make_mp4_ass(plst,sinfo,[vidid])
+                uwsc_dialog()
+
+        # 該当フォルダの.aud.mp4 / .vid.mp4を消す
+        for f in Path(dldir).glob("*.vid.mp4"): f.unlink()
+        for f in Path(dldir).glob("*.aud.mp4"): f.unlink()
+
+# CGI の場合
+else:
+    print("Content-Type: text/html; charset=UTF-8\r\n")
+    params  = parse_qs(os.environ.get("QUERY_STRING", ""))
+    paramc  = params.get("c",[''])[0]
+    p1 = params.get("p1",[''])[0]
+    p2 = params.get("p2",[''])[0]
+    based = dlbased
+    mp4f = based + p1
+    assf = str(Path(mp4f).with_suffix(".ass"))
+
+# ヘッダ表示
+    py = "/cgi-bin/mochi2_ytdl.py"
+    title_page="開発者メニュー"
+    title_txt = f'<a href="{py}">{title_page}</a>：{based} -> {paramc}'
+    meta_add = ""
+    if paramc:
+        meta_add = f'<meta http-equiv=refresh content=2;URL={py}>'
+    if p1:
+        title_txt += f'<div class="normal-blue">{p1}</div>'
+    print( f'''\
+    <html><head><title>{title_page}:{paramc}</title>
+    <link rel="icon" href="/favicon.ico">
+    {meta_add}
+    </head><body>
+    ''')
+    with open(HEADER, "r", encoding="utf-8") as f:
+        for line in f:
+            if '<!--#include virtual="/cgi-bin/mochi2_bread.py" -->' in line:
+                print(f'<span class="big">{title_txt}</span>')
+            else:
+                print(line, end="")
+    print('<hr>',flush=True)
+
+# コマンド一覧
+    if paramc == "play":
+        p = subprocess.Popen([MPCBEEXE,'/add',mp4f,'/sub',assf,'/play'])
+        print(f"【再生】<br>{mp4f}<br>")
+
+    if paramc == "mochiutasc":
+        mp4f = mp4f.replace('/','\\')
+        p = subprocess.Popen([MOCSCEXE,mp4f,MOCSCASS])
+        print(f"【編集 MochiutaSC】<br>{mp4f}<br>")
+
+    if paramc == "edit_ass":
+        p = subprocess.Popen(['notepad.exe',assf])
+        print(f"【編集 ass】<br>{assf}<br>")
+    
+    if paramc == "deploy":
+        sinfo = read_ass_sinfo(assf)
+        tomp4f = get_fdir_fname(scrbased,sinfo,"mp4")
+        toassf = get_fdir_fname(scrbased,sinfo,"ass")
+        if os.path.exists(tomp4f):
+            print(f"【削除mp4】<br>{tomp4f}<br>")
+            os.remove(tomp4f)
+        print(f"【配置mp4】<br>{tomp4f}<br>")
+        shutil.move(mp4f, tomp4f)
+        if os.path.exists(toassf):
+            print(f"【削除ass】<br>{toassf}<br>")
+            os.remove(toassf)
+        print(f"【配置ass】<br>{toassf}<br>")
+        shutil.move(assf, toassf)
+
+    if paramc == "delete":
+        if os.path.isfile(assf):
+            tini = os.path.dirname(assf) + "/!mochi2err.txt"
+            sinfo = read_ass_sinfo(assf)
+            # ちょいと雑だがuta-netフォルダならno_sinfoで削除
+            if "uta-net" in os.path.basename(os.path.dirname(assf)):
+                utaid = sinfo.get("utaid")
+                url = "https://www.uta-net.com/song/" + utaid + "/"
+                writeini("no_sinfo",utaid,f"{url} {sinfo['title']} ／ {sinfo['artist']}" ,tini)
+                print(f"【削除 - no_sinfo】<br>{assf}<br>")
+            # ちょいと雑だがそれ以外のフォルダならno_utaidで削除
+            else:
+                vidid = sinfo.get("vidid")
+                url = f"https://www.youtube.com/watch?v={vidid}"
+                writeini("no_utaid",vidid,url + " " + sinfo.get('vidname'),tini)
+                print(f"【削除 - no_utaid】<br>{assf}<br>")
+            Path(assf).unlink(missing_ok=True)
+        print(f"【削除】<br>{mp4f}<br>")
+        Path(mp4f).unlink(missing_ok=True)
+
+    if paramc == "edit_ini" or paramc == "delete":
+        tini = os.path.dirname(assf) + "/!mochi2err.txt"
+        p = subprocess.Popen(['notepad.exe',tini])
+        print(f"【編集 ini】<br>{tini}<br>")
+
+# 編集楽曲一覧
+    if not paramc:
+        nocnt = 1
+        for mp4p in Path(based).rglob("*.mp4"):
+            mp4f = str(mp4p).replace('\\','/')
+            print('<table class="pl-table">')
+            html_tr(nocnt,based,mp4f)
+            print('</table>')
+            nocnt += 1
+    else:
+        print("<hr>ページを転送しています。しばらくお待ちください……\n</body></html>")

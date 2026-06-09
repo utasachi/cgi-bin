@@ -3,7 +3,7 @@
 # pip install requests
 # pip install ytmusicapi
 debug_idxs = set()    # 全部走行
-# debug_idxs = {0,5}   # 特定走行モード
+# debug_idxs = {1,4}   # 特定走行モード
 
 import os, sys, json, re, glob, requests, pickle, shutil
 from urllib.parse import quote
@@ -333,6 +333,7 @@ def mk_pl_newrecords(plst):                 # 新譜
         img = get_imgurl(sinfo,mp4f)
         comment += "<br>".join(get_songcomment(mp4f))
         html.append(html_index_tr(nocnt,img,mp4i['path'],comment))
+        nocnt += 1
     html.append("</table>")
     with open(htmlfhead + plst['name'] + ".html", 'a', encoding='utf-8') as f:
         f.write("".join(html))
