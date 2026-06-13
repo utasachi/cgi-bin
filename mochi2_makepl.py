@@ -2,10 +2,7 @@
 # -*- coding: utf-8 -*-
 # pip install requests
 # pip install ytmusicapi
-debug_idxs = set()    # 全部走行
-# debug_idxs = {1,4}   # 特定走行モード
-
-import os, sys, json, re, glob, requests, pickle, shutil
+import os, sys, json, re, glob, requests, pickle, shutil, subprocess
 from urllib.parse import quote
 from pathlib import Path
 from datetime import datetime
@@ -15,6 +12,12 @@ sys.stdout.reconfigure(encoding='utf-8')
 os.chdir(Path(__file__).resolve().parent)
 print("Content-Type: text/html; charset=UTF-8\r\n")
 
+if len(sys.argv) == 1:
+    debug_idxs = set()                  # 引数なし → 全部走行
+else:
+    debug_idxs = {int(x) for x in sys.argv[1:]}   # 指定された番号だけ
+debug_idxs = {6}  # 特定走行モード
+
 NOIMG = "images/noimg.png"
 karapath = open("../Apache24/conf/httpd-mochikara.conf", encoding="utf-8")\
     .read().split('"')[1]
@@ -22,13 +25,7 @@ htmlfhead = karapath + "/プレイリスト/"
 scrbased  = karapath + "/MV_スクロール歌詞/"
 thumbbased = htmlfhead + 'thumbimgs/'
 
-#  整理しましょう
-# mp4f,assf,txtf -> str,karapath込み,/区切り
-
 # 関数
-import subprocess
-from pathlib import Path
-
 def make_thumbimg(mp4f, thumbimg, sec = "30"):  
     thumbimg = Path(thumbimg)
     thumbimg.parent.mkdir(parents=True, exist_ok=True)
@@ -503,7 +500,10 @@ def mk_pl_ytplist(plst):                    # youtubeプレイリスト（フォ
             ckfiles_utaid = scr_utaids.get(utaid)
             songs.append((views, ckfiles_utaid))
         print(vidid, utaid, sinfo.get('title'), sinfo.get('artist'), views)
-#    songs.sort(reverse=True, key=lambda x: x[0])    # 表示回数順
+    if plst.get("sort") == "reverse":
+        songs.reverse()
+    elif plst.get("sort") == "views":
+        songs.sort(reverse=True, key=lambda x: x[0])    # 表示回数順
     nocnt = 1
     html = ['<table class="pl-table">']
     for views, ckfiles in songs:
