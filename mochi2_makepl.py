@@ -16,7 +16,7 @@ if len(sys.argv) == 1:
     debug_idxs = set()                  # 引数なし → 全部走行
 else:
     debug_idxs = {int(x) for x in sys.argv[1:]}   # 指定された番号だけ
-debug_idxs = {6}  # 特定走行モード
+debug_idxs = {1}  # 特定走行モード
 
 NOIMG = "images/noimg.png"
 karapath = open("../Apache24/conf/httpd-mochikara.conf", encoding="utf-8")\
