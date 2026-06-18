@@ -34,6 +34,7 @@ key_chg = os.environ['KEY_CHG']
 bgvroot = f"{os.environ['BGV_PATH']}"
 fname = f"{os.environ['DOC_ROOT']}{unquri}"
 assf = str(Path(fname).with_suffix(".ass"))
+ssaf = str(Path(fname).with_suffix(".ssa"))
 txtf = str(Path(fname).with_suffix(".txt"))
 extf = os.path.splitext(fname)[1].lstrip(".")
 thumbimgf = (
@@ -371,6 +372,8 @@ if form.getvalue('confirm') == 'y':
         trim_bgv(vidf,mp3dur,outf)
         if os.path.exists(assf):                # mp3 & ass
             p = subprocess.Popen([MPCBEEXE,outf,'/add','/dub',fname,'/sub',assf])
+        elif os.path.exists(ssaf):                # mp3 & ass
+            p = subprocess.Popen([MPCBEEXE,outf,'/add','/dub',fname,'/sub',ssaf])
         elif os.path.exists(txtf):              # mp3 & txt
             kashi_txt += f'　📝 タイムタグ付きテキストから歌詞ファイルを作成します\n'
             asstmp = f"../tmp/{os.path.splitext(os.path.basename(fname))[0]}.ass"
@@ -384,12 +387,16 @@ if form.getvalue('confirm') == 'y':
         extract_audio(fname,audf)
         if os.path.exists(assf):
             p = subprocess.Popen([MPCBEEXE,fname,'/add','/dub',audf,'/sub',assf])
+        elif os.path.exists(ssaf):
+            p = subprocess.Popen([MPCBEEXE,fname,'/add','/dub',audf,'/sub',ssaf])
         else:
             p = subprocess.Popen([MPCBEEXE,fname,'/add','/dub',audf])
 
     else:                                       # mp4 & 通常登録
         if os.path.exists(assf):
             p = subprocess.Popen([MPCBEEXE,fname,'/add','/sub',assf])
+        elif os.path.exists(ssaf):
+            p = subprocess.Popen([MPCBEEXE,fname,'/add','/sub',ssaf])
         else:
             p = subprocess.Popen([MPCBEEXE,fname,'/add'])
     with open(LSTF, "a", encoding="utf-8") as f:
@@ -409,6 +416,8 @@ else:
     sinfo_txt += f'ℹ️楽曲情報:[{extf}]'
     ### assある場合
     vidid = ""
+    if os.path.exists(ssaf):
+        sinfo_txt += f" [ssa]"
     if os.path.exists(assf):
         ass_txt,enc = read_text(assf)
         sinfo_txt += f" [ass({enc})]"
@@ -528,10 +537,22 @@ else:
     </td>
 </tr>
 '''
+    # アラート表示
+    alert = ""
+    if extf == "mp3" and not os.path.exists(assf) and not os.path.exists(txtf):
+        alert = "⚠️歌詞情報(ass or txt)がないため歌詞が表示されません。"
+    elif any( c in ("\u3099", "\u309A") for c in unquri):
+        alert = "ℹ️ファイル名に特殊文字(結合文字)を含みます。一部の機能が利用できません。"
+    elif "#" in unquri or "&" in unquri or "%" in unquri:
+        alert = "ℹ️ファイル名に特殊記号( # & % )を含みます。一部の機能が利用できません。"
+    elif unquri.endswith(" .mp4"):
+        alert = "ℹ️末尾に半角スペースを含むファイル名です。一部の機能が利用できません。"
+    if alert:
+        alert = f"<font color=blue><b>{alert}</b></font><br>"
 
     # 登録してもよろしいですか？
     confirm_txt = f'''\
-<center>
+<center>{alert}
 <span class="big">❓</span>
 <span class="mid">上記を登録してもよろしいですか？</span><br />
 <button class="btn" type="submit">O　K</button>　

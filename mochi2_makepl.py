@@ -16,7 +16,7 @@ if len(sys.argv) == 1:
     debug_idxs = set()                  # 引数なし → 全部走行
 else:
     debug_idxs = {int(x) for x in sys.argv[1:]}   # 指定された番号だけ
-debug_idxs = {1}  # 特定走行モード
+debug_idxs = {0,1}  # 特定走行モード
 
 NOIMG = "images/noimg.png"
 karapath = open("../Apache24/conf/httpd-mochikara.conf", encoding="utf-8")\
@@ -531,6 +531,38 @@ def mk_thumbimgs(plst):  # vididがない動画にthumb_imgs付与、mk_pl_index
             make_thumbimg(mp4f, get_thumbimgf(mp4f))
     return
 
+def mk_pl_hddfolder(plst):                      # 旧 初めにお読みください
+    mk_plheader(plst)
+    nocnt = 1
+    html = ['<h3>■フォルダ構成</h3>',' 📁 リンククリックで該当フォルダに遷移します','<table class="pl-table">\n']
+    for name, link, newmark, level, desc in plst["folderdesc"]:
+        prefix = "　" * level                   # 階層表示
+        if link:                                # 名前部分
+            e="📁"
+            if ".html" in name or ".mp4" in name: e = "📄"
+            left = f'{prefix}<a class="link-hover-b" href="{link}">{e}{name}</a>'
+        else:
+            left = prefix + name
+        if newmark:                              # NEW表示
+            left += f' <font color="#ff2222">{newmark}</font>'
+        cls = "pl-tr-line1" if nocnt % 2 else "pl-tr-line2"
+        if level < 2:
+            cls = "pl-tr-line0"
+        html.append(
+            f'<tr class="{cls}">'
+            f'<td>{nocnt}</td>'
+            f'<td>{left}</td>'
+            f'<td>{desc}</td>'
+            "</tr>\n"
+        )
+        nocnt += 1
+    html.append("</table>\n")
+    with open(htmlfhead + plst['name'] + ".html", 'a', encoding='utf-8') as f:
+        f.write("".join(html))
+        with open(htmlfhead +"【うたさちHDD】特徴.html", encoding='utf-8') as src:
+            f.write(src.read())
+    mk_plfooter(plst)
+
 # メインループ
 with open("mochi2_makepl.json", "r", encoding="utf-8") as f:
     plists = json.load(f)
@@ -550,5 +582,7 @@ for i, plst in enumerate(plists):
         mk_pl_ytplist(plst)
     elif plst['pltype'] == "dirlist":
         mk_pl_dirlist(plst)
+    elif plst['pltype'] == "hddfolder":
+        mk_pl_hddfolder(plst)
     elif plst['pltype'] == "allmp4" or plst['pltype'] == "allmp3":
         mk_pl_all(plst)

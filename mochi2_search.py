@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 import os, sys, cgi, pickle
 from pathlib import Path
+from urllib.parse import quote
 sys.stdout.reconfigure(encoding='utf-8')
 # 定義
 CONF = "../Apache24/conf/httpd-mochikara.conf"
@@ -68,11 +69,13 @@ for i, path in enumerate(results[:200]):
         icon = "/icons/sound2.gif"
     else:
         icon = "/icons/movie.gif"
-    rel = "/" + os.path.relpath(path, docroot)
+    rel = "/" + os.path.relpath(path, docroot).replace("\\", "/")
+    href = quote(rel, safe="/")
+
     print(
         f'<tr class="{rowclass}">'
         f'<td><img src="{icon}"></td>'
-        f'<td><a href="{rel}"> 📄 {rel}</a></td>'
+        f'<td><a href="{href}"> 📄 {rel}</a></td>'
         f'</tr>'
     )
 print(f"</table>")
