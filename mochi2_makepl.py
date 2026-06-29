@@ -16,7 +16,7 @@ if len(sys.argv) == 1:
     debug_idxs = set()                  # 引数なし → 全部走行
 else:
     debug_idxs = {int(x) for x in sys.argv[1:]}   # 指定された番号だけ
-debug_idxs = {0,1}  # 特定走行モード
+debug_idxs = {0}  # 特定走行モード
 
 NOIMG = "images/noimg.png"
 karapath = open("../Apache24/conf/httpd-mochikara.conf", encoding="utf-8")\
@@ -183,15 +183,15 @@ def mk_plheader(plst):                  # ヘッダ作成
 
     header = Path("../htdocs/mochi2_HEADER.shtml").read_text(encoding="utf-8")
     # ヘッダ内容置き換え
-    now = datetime.now().strftime("%Y/%m/%d %H")
-    header = header.replace('音量:<!--#include virtual="/htdocs/mochivol.txt" -->', \
-                            f'プレイリスト {now}時作成')
+    now = datetime.now().strftime("%Y/%m/%d")
+    header = header.replace('🔈音量:<!--#include virtual="/htdocs/mochivol.txt" -->', \
+                            f'playlist {now}作成')
     header = header.replace('<!--#include virtual="/cgi-bin/mochi2_bread.py" -->', \
                             f'<span class=big>{plst["name"]}</span>')
     header = header.replace('/htdocs/','images/')
     comment =  f'''\
 <a href="index.html"><img class="pl-sicon" src="{plst["icon"]}"></a>
-<div class="pre-gray">{plst["comment1"]}\n{plst["comment2"]}<hr></div>
+<div class="pre-gray">{plst["comment1"]}\n{plst["comment2"]}</div><hr>
 '''
     with open(out, 'w', encoding='utf-8') as f:
         f.write( title + header + comment)
@@ -205,19 +205,17 @@ def mk_plfooter(plst):                  # フッタ作成
 def html_index_tr(nocnt, icon, name, comment):  # 行情報作成
     if not icon:
         icon = NOIMG
-    name_style = name
+    name_style = f'<span class="link-hover-b">{name}</span>'
     if "/" in name:
         i = name.rfind("/")
-        name_style = f'<div class="pl-smain">{emoji(name)} {name[:i+1]}</div>{name[i+1:]}'
-    mvlink = 'class="mvlink"'
-    if '.html' in name:
-        mvlink = ''
+        name_style  = f'<span class="pl-smain">{emoji(name)} {name[:i+1]}</span><br>'
+        name_style += f'<span class="link-hover-b">{name[i+1:]}</span>'
     return f'''
 <tr class="pl-tr">
   <td rowspan=2 class="pl-no">{nocnt}</td>
-  <td rowspan=2 class="pl-icon-hover"><a {mvlink} href="{quote(name, safe="/")}">
+  <td rowspan=2 class="pl-icon-hover"><a href="{quote(name, safe="/")}">
     <img class="pl-img" src="{icon}"></a></td>
-  <td class="pl-main1-hover"><a {mvlink} href="{quote(name, safe="/")}">
+  <td class="pl-main1"><a href="{quote(name, safe="/")}">
     <b>{name_style}</b></a></td>
 </tr>
 <tr class="pl-tr">
@@ -249,7 +247,6 @@ def html_sinfo_tr(nocnt, ckfiles, views = 0, plorder = -1):  # sinfo行情報作
         if vidid:
             name_style += f'[<a class="link-hover" href="{url_youtube(vidid)}">▶️youtube</a>] '
     comment_style = '<table class="pl-table">'
-    mvlink = 'class="mvlink"'
     r = 1
     for ckfile in ckfiles:
         if '/' in ckfile:
@@ -258,9 +255,9 @@ def html_sinfo_tr(nocnt, ckfiles, views = 0, plorder = -1):  # sinfo行情報作
             ckfile1 = "(フォルダなし)"
             ckfile2 = ckfile
         comment_style += f'''\
-<tr class="pl-tr"><td class="pl-main{r}-hover">
-<a {mvlink} href="{quote(ckfile, safe="/")}"><div class="normal-blue">{emoji(ckfile)} {ckfile1}</div>
-<span class="mid">{ckfile2}</span>
+<tr class="pl-tr"><td class="pl-main{r}">
+<a href="{quote(ckfile, safe="/")}"><span class="normal-blue">{emoji(ckfile)} {ckfile1}</span><br>
+<span class="link-hover-b">{ckfile2}</span>
 </a></td></tr>
 '''
         r = 2 if r == 1 else 1
@@ -268,7 +265,7 @@ def html_sinfo_tr(nocnt, ckfiles, views = 0, plorder = -1):  # sinfo行情報作
     return f'''
 <tr class="pl-tr">
   <td rowspan=2 class="pl-no">{nocnt}</td>
-  <td rowspan=2 class="pl-icon-hover"><a {mvlink} href="{quote(ckfiles[-1], safe="/")}">
+  <td rowspan=2 class="pl-icon-hover"><a href="{quote(ckfiles[-1], safe="/")}">
     <img class="pl-img" src="{img}"></a></td>
   <td class="pl-main0">{comment_style}</td>
 </tr>
@@ -281,6 +278,7 @@ def html_sinfo_tr(nocnt, ckfiles, views = 0, plorder = -1):  # sinfo行情報作
 def mk_pl_index(plst):                  # プレイリストのプレイリスト
     # htdocsからのコピーをやる
     shutil.copy("../htdocs/mochi2_header.css", htmlfhead + "images/" )
+    shutil.copy("../htdocs/mochi2_fancy2.css", htmlfhead + "images/" )
     shutil.copy("../htdocs/mochi2_script.js" , htmlfhead + "images/" )
 
     mk_plheader(plst)
@@ -379,7 +377,7 @@ def mk_pl_mochilist(plst):                  # 過去回セットリスト
     with open(htmlfhead + plst['name'] + ".html", 'a', encoding='utf-8') as fa:
         fa.write('<table class="pl-table">')
         for s, fp in files:
-            date = f"{s[:4]}/{s[4:6]}/{s[6:8]}"
+            date = f"{s[:4]}<br>{s[4:6]}/{s[6:8]}"
             with open_text_auto(fp) as f:
                 for line in f:
                     img = None
@@ -536,7 +534,7 @@ def mk_pl_hddfolder(plst):                      # 旧 初めにお読みくだ�
     nocnt = 1
     html = ['<h3>■フォルダ構成</h3>',' 📁 リンククリックで該当フォルダに遷移します','<table class="pl-table">\n']
     for name, link, newmark, level, desc in plst["folderdesc"]:
-        prefix = "　" * level                   # 階層表示
+        prefix = "-" * level                   # 階層表示
         if link:                                # 名前部分
             e="📁"
             if ".html" in name or ".mp4" in name: e = "📄"

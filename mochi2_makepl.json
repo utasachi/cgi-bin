@@ -25,7 +25,7 @@
         "VOCALOID・VOICEROIDのMusicVideo"],
     [   "ライブ映像/", "/MV_スクロール歌詞/ライブ映像/", "", 2,
         "最新のライブ映像、Youtubeに掲載されているもの"],
-    [   "Mp3/", "/Mp3/", "【フォルダ統合しました】", 1,
+    [   "Mp3/", "/Mp3/", "フォルダ統合", 1,
         "mp3のフォルダ、背景動画を指定して歌えます"],
     [   "★うたさちmp3/", "/Mp3/★うたさちmp3/", "", 2,
         "映像なしのmp3フォルダ、主に2012年以前の古い楽曲"],
@@ -158,8 +158,8 @@
         "icon": "https://yt3.googleusercontent.com/_PoRJpwlHmc2i2gQgXliEJ3HvgrspH3enTCuAfRrBFZE1ziCIfpcB8wdWuvkbGQ_K4sAA7vX28A=s160-c-k-c0x00ffffff-no-rj",
         "folder": "THE FIRST TAKE",
         "mtype" : "THE FIRST TAKE",
-        "comment1": "■RULES  白いスタジオに置かれた一本のマイク。ここでのルールはただ一つ。一発撮りのパフォーマンスをすること。",
-        "comment2": "■STATEMENT  一発撮りで切りとる。今という時間と、今しか出せない音を。<br>  THE FIRST TAKE この瞬間は、二度とない。" }
+        "comment1": "白いスタジオに置かれた一本のマイク。ここでのルールはただ一つ。一発撮りのパフォーマンスをすること。",
+        "comment2": "一発撮りで切りとる。今という時間と、今しか出せない音を。THE FIRST TAKE この瞬間は、二度とない。" }
     ,
     {   "_no": 9,
         "name": "THE FIRST TAKE アニメテーマソングス",
@@ -169,8 +169,8 @@
         "sort": "reverse",
         "folder": "THE FIRST TAKE",
         "mtype" : "THE FIRST TAKE",
-        "comment1": "■RULES  白いスタジオに置かれた一本のマイク。ここでのルールはただ一つ。一発撮りのパフォーマンスをすること。",
-        "comment2": "■STATEMENT  一発撮りで切りとる。今という時間と、今しか出せない音を。<br> 人気アニメの主題歌が一発撮りの緊張感の中で披露され、多くの動画が1,000万回再生を超える人気コンテンツとなっています。 " }
+        "comment1": "白いスタジオに置かれた一本のマイク。ここでのルールはただ一つ。一発撮りのパフォーマンスをすること。",
+        "comment2": "人気アニメの主題歌が一発撮りの緊張感の中で披露され、多くの動画が1,000万回再生を超える人気コンテンツとなっています。 " }
     ,
     {   "_no": 10,
         "name": "アニソン！" ,

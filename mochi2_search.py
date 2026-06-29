@@ -18,12 +18,14 @@ with open(CONF, "r", encoding="utf-8") as f:
     docroot = f.readline().split('"')[1]
 
 # ヘッダ出力
-title_txt = "【スペース区切りand検索】"
+title_txt = "【and検索】"
 print( f'''\
 <html><head>
-  <title>{title_txt}</title>
-  <link rel="stylesheet" href="/htdocs/mochi2_fancy.css" type="text/css">
-  <link rel="icon" href="/favicon.ico">
+    <title>{title_txt}</title>
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="cache-control" content="no-cache" />
+    <meta http-equiv="expires" content="0" />
+    <link rel="icon" href="/favicon.ico">
  </head><body>
 ''',flush=True)
 
@@ -34,8 +36,9 @@ if not os.path.exists(PKLF) or not form.getvalue('q'):
     cache = []
     for root, _, files in os.walk(docroot):
         for name in files:
-            if os.path.splitext(name)[1].lower() in EXTS:
-                cache.append(os.path.join(root, name).replace("\\", "/"))
+            path = os.path.join(root, name).replace("\\", "/")
+            if "bgv/" not in path and os.path.splitext(name)[1].lower() in EXTS:
+                cache.append(path)
     with open(PKLF, "wb") as f:
         pickle.dump(cache, f)
     cacheflg = "[キャッシュ再作成]"
@@ -75,7 +78,7 @@ for i, path in enumerate(results[:200]):
     print(
         f'<tr class="{rowclass}">'
         f'<td><img src="{icon}"></td>'
-        f'<td><a href="{href}"> 📄 {rel}</a></td>'
+        f'<td><a href="{href}">{rel}</a></td>'
         f'</tr>'
     )
 print(f"</table>")

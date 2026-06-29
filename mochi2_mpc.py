@@ -60,6 +60,21 @@ def read_text(path):
 def remove_time_tags(text):
     return re.sub(r"\[.*?\]", "", text)
 
+def change_pitch(input_file, output_file, semitone):
+    if semitone == 0 or not -12 <= semitone <= 12: return False
+    pitch = 2 ** (semitone / 12)
+    cmd = [ "../bin/ffmpeg", "-y",
+        "-i", input_file,
+        "-c:v", "copy",
+        "-af", f"rubberband=pitch={pitch}:formant=preserved",
+        output_file, ]
+    result = subprocess.run(
+        cmd,
+        creationflags=subprocess.CREATE_NO_WINDOW,
+        capture_output=True,
+        text=True )
+    return result
+
 def count_audio_tracks(path):
     result = subprocess.run(
         [   "../bin/ffprobe",
@@ -312,10 +327,8 @@ def make_thumbimg(mp4f, thumbimg, sec = "30"):
 
 # ヘッダ設定
 form = cgi.FieldStorage()
-meta_add = ""
 if form.getvalue('confirm') == 'y':
     title_txt = f"【楽曲登録中】{extf}"
-    meta_add = f'<meta http-equiv=refresh content=2;URL={uri}?confirm=ok>'
 elif form.getvalue('confirm') == 'ok':
     title_txt = f"【楽曲登完了】{extf}"
 else :
@@ -324,16 +337,18 @@ print( f'''\
 <html><head>
   <title>{title_txt}</title>
   <link rel="icon" href="/favicon.ico">
-  {meta_add}
- </head><body>
+  <meta http-equiv="Cache-Control" content="no-cache">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+</head><body>
 ''')
 with open(HEADER, "r", encoding="utf-8") as f:
     for line in f:
         if '<!--#include virtual="/cgi-bin/mochi2_bread.py" -->' in line:
-            print(f'<span class="big">{title_txt}</span>')
+            print(f'<span class="mid">{title_txt}</span>')
         else:
             print(line, end="")
-print('<hr>',flush=True)
+print('\n',flush=True)
 
 # チェック
 if unquri.startswith("/bgv/"):
@@ -344,12 +359,27 @@ if not os.path.exists(fname):
     exit()
 
 # 動画登録確認
-icon_img = sinfo_txt = mp3bgv_txt = offv_txt = confirm_txt = kashi_txt = ""
+icon_img = sinfo_txt = mp3bgv_txt = offv_txt = pitch_txt = confirm_txt = kashi_txt = ""
 
-## 動画登録中
+# 動画登録中
 if form.getvalue('confirm') == 'y':
-    sinfo_txt = '<span class="mid">⏳ 楽曲登録中......</span>'
-    kashi_txt = '<span class="mid">'
+    print('<center><div class="loader"></div>⏳ 楽曲登録中......<br />',flush=True)
+    if form.getvalue('pitch_value') != '0':        # キーピッチ変更
+        pitch_value = form.getvalue('pitch_value')
+        pitch_v = pitch_value
+        if int(pitch_v) > 0:
+            pitch_v = f"+{pitch_v}"
+        print(f'　🎵 キーピッチを変更します。しばらくお待ちください......{pitch_v}<br />',flush=True)
+        ofile = os.path.join("../tmp", os.path.basename(fname))
+        r = change_pitch(fname, ofile, int(pitch_value))
+        if not r:
+            print(f"キーピッチ変更エラー！")
+        if r.returncode != 0 :
+            print(f"キーピッチ変更エラー！\n")
+            print(r.stderr.decode("utf-8", errors="ignore"))
+        fname = ofile
+    print('</center>')
+
     if intermission == "ON":        # インターミッション登録
         kashi_txt += f'　🍵 登録曲と曲の間に30秒のインターミッションが入ります\n'
         imrnd = random.randint(1, 4)
@@ -378,7 +408,7 @@ if form.getvalue('confirm') == 'y':
             kashi_txt += f'　📝 タイムタグ付きテキストから歌詞ファイルを作成します\n'
             asstmp = f"../tmp/{os.path.splitext(os.path.basename(fname))[0]}.ass"
             txt2ass(fname,bgvf,asstmp)
-            time.sleep(0.2)
+            time.sleep(0.1)
             p = subprocess.Popen([MPCBEEXE,outf,'/add','/dub',fname,'/sub',asstmp])
 
     elif form.getvalue('offvocal') == 'on':     # mp4 & offボーカル
@@ -401,13 +431,14 @@ if form.getvalue('confirm') == 'y':
             p = subprocess.Popen([MPCBEEXE,fname,'/add'])
     with open(LSTF, "a", encoding="utf-8") as f:
         f.write(f"{uripath}\n")
-    kashi_txt += f'　🚫 登録中はリロードボタンを押さないでください</span>'
+    kashi_txt += f'　🚫 登録中はリロードボタンを押さないでください'
+    print(f'<meta http-equiv=refresh content=2;URL={uri}?confirm=ok>')
 
-## 動画登録完了
+# 動画登録完了
 elif form.getvalue('confirm') == 'ok':
     sinfo_txt = "<span class=mid>✅ 楽曲登録しました。</span>"
 
-## 動画登録確認
+# 動画登録確認
 else:
     sinfo_txt = f'''\
 <form action="{uri}" method="get">
@@ -442,9 +473,9 @@ else:
                     text = re.sub(r"\{.*?\}", "", text)  # {...} を削除
                     kashi.append(text)
         if url_utanet:
-            sinfo_txt += f'[<a class="link-hover" href="{url_utanet}">🎼uta-net</a>] '
+            sinfo_txt += f'[<a class="link-hover-b" href="{url_utanet}">🎼uta-net</a>] '
         if url_youtube:
-            sinfo_txt += f'[<a class="link-hover" href="{url_youtube}">▶️youtube</a>] '
+            sinfo_txt += f'[<a class="link-hover-b" href="{url_youtube}">▶️youtube</a>] '
         if   loopvid : vidid = loopvid
         elif videoid : vidid = videoid
         kashi_txt = "\n".join(kashi)
@@ -472,7 +503,7 @@ else:
             text, enc = read_text(txtf)
             kashi_txt = remove_time_tags(text)
     if kashi_txt:
-        kashi_txt = f'📝 [歌詞]\n <center>{kashi_txt}</center>'
+        kashi_txt = f'📝 [歌詞]\n<center>{kashi_txt}</center>'
 ### mp3の場合
     if extf == 'mp3':
         title, artist, album = get_id3_guess(fname)
@@ -484,9 +515,21 @@ else:
     if extf == 'mp4' and track_chg == "ON":
         track_cnt = count_audio_tracks(fname)
         if track_cnt > 1:
-            offv_txt =  '<label><input type="checkbox" name="offvocal">'
+            offv_txt =  '<label class="link-hover-b"><input type="checkbox" name="offvocal">'
             offv_txt += '<span class="big">🔇</span>offvocal'
             offv_txt += '<span class="normal"> (2番目の音声トラックを再生)</span></label>'
+
+    # キーピッチ変更(mp4)
+    pitch_txt = ""
+    if extf == "mp4":
+        pitch_txt = f'''\
+    🎵 キーピッチ変更：
+    <button type="button" onclick="changePitch(-1)">－</button>
+    <span id="pitch_display">±0</span>
+    <button type="button" onclick="changePitch(1)">＋</button>
+    <button type="button" onclick="resetPitch()">リセット</button>
+    <input type="hidden" name="pitch_value" id="pitch_value" value="0">
+'''
 
     # mp3背景動画
     if extf == 'mp3':
@@ -505,26 +548,26 @@ else:
         rows = []
         for i, f in enumerate(Path(bgvroot).iterdir()):
             if f.is_file() and f.suffix.lower() == ".mp4":
-                rowclass = "pl-main1-hover" if i % 2 == 0 else "pl-main2-hover"
+                rowclass = "pl-main1" if i % 2 == 0 else "pl-main2"
                 rows.append(
                     f'<tr class="pl-tr"><td class="{rowclass}"><span class="normal">'
-                    f'<a href="?bgvf={f.name}">📄 {f.name}</a></span>'
+                    f'<a class="link-hover" href="?bgvf={f.name}">{f.name}</a></span>'
                     f'</td></tr>'
                 )
         bgvlist = "\n".join(rows)
 
         mp3bgv_txt = f'''\
 <tr class="pl-tr">
-    <td rowspan=2 class="pl-no1"><span class=bbig>🎬</span></td>
-    <td colspan=2 class="pl-main1-hover">背景動画を選択:
-        <button type="button" onclick="location.href = location.pathname + \'?b=fname\'">関連度(ファイル名)</button>
-        <button type="button" onclick="location.href = location.pathname + \'?b=rnd\'">ランダム</button>
-        <button type="button" onclick="toggleArea()">ファイル選択</button>
+    <td rowspan=2 class="pl-no1"><span class="bbig">🎬</span></td>
+    <td colspan=2 class="pl-main1"><span class="normal-gray">背景動画選択:</span>
+        <button class="btn" type="button" onclick="location.href = location.pathname + \'?b=fname\'">文字列一致</button>
+        <button class="btn" type="button" onclick="location.href = location.pathname + \'?b=rnd\'">ランダム</button>
+        <button class="btn" type="button" onclick="toggleArea()">ファイル選択</button>
     </td>
 </tr>
 <tr class="pl-tr">
     <td colspan=2 class="pl-main1">
-        <input type="input" name="bgv" value="{bgvfile}" size=80 readonly>
+        <input class="bgv-input" type="input" name="bgv" value="{bgvfile}" size=80 readonly>
     </td>
 </tr>
 <tr class="pl-tr">
@@ -555,28 +598,30 @@ else:
 <center>{alert}
 <span class="big">❓</span>
 <span class="mid">上記を登録してもよろしいですか？</span><br />
-<button class="btn" type="submit">O　K</button>　
+<button class="btn" type="submit">は い</button>　
 <button class="btn" type="button" onclick="history.back()">戻 る</button>
 </center>
 '''
 
-
 # html print
 tr_txt = '<tr class="pl-tr"><td colspan=3'
 if offv_txt:
-    offv_txt    = f'{tr_txt} class="pl-main1-hover">{offv_txt}</td></tr>'
+    offv_txt    = f'{tr_txt} class="pl-main1">{offv_txt}</td></tr>'
+if pitch_txt:
+    pitch_txt   = f'{tr_txt} class="pl-main1">{pitch_txt}</td></tr>'
 if confirm_txt:
-    confirm_txt = f'{tr_txt} class="pl-main2-hover">{confirm_txt}</td></tr>'
+    confirm_txt = f'{tr_txt} class="pl-main2">{confirm_txt}</td></tr>'
 print(f'''\
 <table class="pl-table">
     <tr class="pl-tr">
         <td rowspan=2 class="pl-no"><span class=bbig>{emoji(unquri)}</span></td>
-        <td class="pl-main0"><div class="pl-smain">{urifolder}</div>{urifile}</td>
+        <td class="pl-main0"><div class="pl-smain">{urifolder}</div><div class="mid">{urifile}</div></td>
         <td rowspan=2 class="pl-icon">{icon_img}</td>
     </tr>
     <tr class="pl-tr"><td class="pl-comment">{sinfo_txt}</td></tr>
 {mp3bgv_txt}
 {offv_txt}
+{pitch_txt}
 {confirm_txt}
     <tr class="pl-tr"><td colspan=3 class="pre-gray">{kashi_txt}</td></tr>
  </table>
