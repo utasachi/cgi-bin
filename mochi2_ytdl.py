@@ -1,7 +1,7 @@
 #!c:/mochikara2/.venv/Scripts/pythonw.exe
 # -*- coding: utf-8 -*-
 debug_idxs = set()  # 全部走行
-debug_idxs = {6}    # 特定走行モード
+# debug_idxs = {6}    # 特定走行モード
 uwdiag = True       # 一行ごとにuwscのダイアログで聞いてくるやつ
 
 import os, sys, json, re, pickle, html, subprocess, glob, configparser,shutil

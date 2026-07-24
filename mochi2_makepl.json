@@ -119,7 +119,6 @@
     {   "_no": 4,
         "name": "uta-netアニメ01月～03月（冬）" ,
         "pltype": "uta-net",
-        "download": true,
         "url":  "https://www.uta-net.com/user/search_index/anime_fuyu.html",
         "icon": "images/歌ネットの冬アニメ主題歌.png",
         "comment1": "2026年1月期（第１クォーター）",

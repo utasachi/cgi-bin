@@ -452,8 +452,16 @@ else:
     if os.path.exists(assf):
         ass_txt,enc = read_text(assf)
         sinfo_txt += f" [ass({enc})]"
-        if "[テンプレート]" in ass_txt:
-            sinfo_txt += " [スクロール歌詞]"
+# Title: もちからass自動生成v4
+# Title: もちからass自動生成v5 Timeless ver.
+# Title: もちからass自動生成v6 AllInAss ver.
+# Title: もちからass自動生成v7 LRCLIB ver.
+        if "もちからass自動生成v7" in ass_txt:
+            sinfo_txt += " <font color=red>[行同期歌詞(New!!)]</font>"
+        elif "もちからass自動生成v6" in ass_txt:
+            sinfo_txt += " <font color=blue>[スクロール歌詞]</font>"
+        elif "もちからass自動生成v5" in ass_txt:
+            sinfo_txt += " <font color=blue>[スクロール歌詞]</font>"
         kashi = []
         loopvid = videoid = url_utanet = url_youtube = "" 
         for line in ass_txt.splitlines():
@@ -466,11 +474,13 @@ else:
                 url_utanet = f'https://www.uta-net.com/song/{utaid}/'
             if line.startswith(";loopvid") : loopvid = line.split("=", 1)[1]
             if line.startswith(";videoId") : videoid = line.split("=", 1)[1]
+# 歌詞重複行除外処理
             if line.startswith("Dialogue:"):
-                parts = line.split(",", 9)  # 9回だけ分割 → 10番目以降がまとめて取れる
-                if len(parts) >= 10:
-                    text = parts[9]
-                    text = re.sub(r"\{.*?\}", "", text)  # {...} を削除
+                parts = line.split(",", 9)
+                if ( len(parts) >= 10
+                    and parts[8] != "LineSync2"
+                    and ")\\alpha&H10&\\t(" not in parts[9] ):
+                    text = re.sub(r"\{.*?\}", "", parts[9])
                     kashi.append(text)
         if url_utanet:
             sinfo_txt += f'[<a class="link-hover-b" href="{url_utanet}">🎼uta-net</a>] '
