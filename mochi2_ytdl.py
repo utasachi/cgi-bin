@@ -1,11 +1,11 @@
 #!c:/mochikara2/.venv/Scripts/pythonw.exe
 # -*- coding: utf-8 -*-
 debug_idxs = set()  # 全部走行
-# debug_idxs = {6}    # 特定走行モード
+debug_idxs = {6}    # 特定走行モード
 uwdiag = True       # 一行ごとにuwscのダイアログで聞いてくるやつ
 
 import os, sys, json, re, pickle, html, subprocess, glob, configparser,shutil
-import requests
+import requests, time
 from urllib.parse import quote, parse_qs
 from pathlib import Path
 sys.stdout.reconfigure(encoding='utf-8')
@@ -95,6 +95,8 @@ def collect_ids(uvid,ass_dir = scrbased):     # ids集計 uvid = utaid or vidid
 
 def get_vidids(utaid):
     url = f"{URLUTAM}{utaid}/"
+    print(f"★歌ネットビデオ情報取得wait "+url)
+    time.sleep(5)
     html = requests.get(url).text
     return list(dict.fromkeys(re.findall(
         r'https://www\.youtube\.com/embed/([^"?/]+)',
@@ -157,6 +159,8 @@ def get_fdir_fname(basedir, tag, ext="mp4", mmtype=""): # tagからファイル�
 
 def search_utanet(utaid):           # 歌ネットタグ取得
     requrl = URLUTAS + utaid + "/"
+    print(f"★歌ネットタグ取得wait "+requrl)
+    time.sleep(5)
     texts = requests.get(requrl).text
     tag = {}
     m = re.search(r'<h2 class="ms-2 ms-md-3 kashi-title">(.+?)</h2>', texts)
@@ -194,6 +198,7 @@ def search_utanet(utaid):           # 歌ネットタグ取得
     tag['utaid'] = utaid
     # チェック入れよう
     if tag['title'] == "" or tag['artist'] == "" or tag['year'] == "":
+        print(texts)
         raise RuntimeError(f"タグ情報が不正 utaid={utaid}")
     return tag
 
@@ -552,7 +557,7 @@ def make_mp4_ass(plst,sinfo,vidids,expat=""):        # ダウンロードパタ�
         make_mp4_ass_single(plst,sinfo,vidids[0],"mv",title)
         return 1
     # パターン2 mv2 次の候補がすべてかねそろえていれば
-    yinfo1 = get_youtube_info(vidids[1])
+    yinfo1 = get_youtube_info(vidids[1]) if len(vidids) >= 2 else None
     if ( yinfo1
         and yinfo1['duration'] >= 150
         and yinfo1['aspect']   >= 1.1
@@ -576,16 +581,14 @@ def make_mp4_ass(plst,sinfo,vidids,expat=""):        # ダウンロードパタ�
         make_mp4_ass_loopedit(plst,sinfo,vidids[1],vidids[0],"youtube",yinfo0.get('title'))
         return 4
     # パターン5 最初も次もアルバムアート、次の次がshortの場合、loopedit
-    yinfo2 = get_youtube_info(vidids[2])
+    yinfo2 = get_youtube_info(vidids[2]) if len(vidids) >= 3 else None
     if ( yinfo1 and yinfo2
-        and yinfo1 and yinfo2
         and yinfo0['duration'] >= 150
         and yinfo2['aspect']   >= 1.1 ):
         print(f" パターン５ aud={vidids[0]} vid={vidids[2]} utaid={utaid}")
         make_mp4_ass_loopedit(plst,sinfo,vidids[0],vidids[2],"youtube",yinfo2.get('title'))
         return 5
     # パターン6 最初も次もshort、次の次がアルバムアートの場合、loopedit
-    yinfo2 = get_youtube_info(vidids[2])
     if ( yinfo1 and yinfo2
         and yinfo2['duration'] >= 150
         and yinfo0['aspect']   >= 1.1 ):
