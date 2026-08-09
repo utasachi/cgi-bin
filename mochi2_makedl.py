@@ -6,9 +6,10 @@ flg_mkyoutube = 1     # 動画タイプyoutubeをloopeditするか否か
 
 import os, sys, json, re, pickle, html, subprocess, glob, configparser,shutil
 import requests, time
-import ytmusicapi
 from urllib.parse import quote, parse_qs
 from pathlib import Path
+import ytmusicapi
+ytmusic = ytmusicapi.YTMusic()
 sys.stdout.reconfigure(encoding='utf-8')
 os.chdir(Path(__file__).resolve().parent)
 
@@ -23,8 +24,6 @@ if not karapath or not bgvpath:
     raise RuntimeError("karapath か bgvpathの設定がない")
 scrbased = karapath + "/MV_スクロール歌詞/"
 dlbased  = bgvpath  + "/★未分類/"
-ytmusic = ytmusicapi.YTMusic()
-
 
 def rep(s):                         # 文字列置き換え
     if s is None: return ""
@@ -50,6 +49,32 @@ def shorten_artist(name, limit=100):
     if len(shortened) > limit:                  # 3. それでも長ければ … 付けて切る
         shortened = shortened[:limit-1].rstrip() + "…"
     return shortened
+
+def collect_ids(uvid,ass_dir = scrbased):     # ids集計 uvid = utaid or vidid
+    cache_file = Path(f"../tmp/mochi2cache_{uvid}.pkl")
+    if ass_dir != scrbased:
+        cache_file = Path(f"../tmp/mochi2cache_{uvid}_{Path(ass_dir).name}.pkl")
+    if cache_file.exists():                 # キャッシュがあればそれを使う
+        with open(cache_file, "rb") as f:
+            return pickle.load(f)
+    print(f'作成中... collect_ids:{uvid} ass_dir={ass_dir}')
+    ids = {}
+    if uvid == "utaid":
+        id_re = re.compile(r'^;utaid=(\d+)')
+    if uvid == "vidid":
+        id_re = re.compile(r'^;vidid=(.+)')
+    for ass_path in Path(ass_dir).rglob("*.ass"):
+        with ass_path.open(encoding="utf-8") as f:
+            for line in f:
+                m = id_re.match(line.strip())
+                if m:
+                    foundid = m.group(1)
+                    ckfpath = ass_path.with_suffix(".mp4").as_posix()
+                    ckrpath = ckfpath.replace(karapath,"")
+                    ids.setdefault(foundid, []).append(ckrpath)
+    with open(cache_file, "wb") as f:               # キャッシュ保存
+        pickle.dump(ids, f)
+    return ids
 
 def search_utanet(utaid):           # 歌ネットタグ取得
     time.sleep(1)
@@ -136,11 +161,11 @@ def get_fname(basedir, tag, ext="mp4",mmtype=""):   # tagからファイルパ�
 
 def append_ytdlp_cmd(batf, fname, vidid):
     with open(batf, "a", encoding="cp932") as f:
-        f.write(f'{YTDLP} -f "bv[height<=1080]+ba" --merge-output-format mp4 -N 1 -o "{fname}" -- {vidid}\n')
+        f.write(f'{YTDLP} --no-overwrites -f "bv[height<=1080]+ba" --merge-output-format mp4 -N 1 -o "{fname}" -- {vidid}\n')
 
 def append_loopedit_cmd(batf, vidf, audf, fname):
     with open(batf, "a", encoding="cp932") as f:
-        f.write(f'{FFMPEG} -y -stream_loop 5 -i "{vidf}" -i "{audf}" ' +
+        f.write(f'{FFMPEG} -n -stream_loop 5 -i "{vidf}" -i "{audf}" ' +
                 f'-shortest -map 0:v:0 -map 1:a -c:v copy -c:a copy "{fname}"\n')
 
 def is_drange(v, min=0, max=0):                         # 数値範囲内チェック
@@ -281,26 +306,42 @@ def write_ass_diag(sinfo,assf,durat=0):                  # ass diag部分記入
     with open(assf, "w", encoding="utf-8") as f:        # 上書き保存
         f.writelines(lines)
 
-def getutaid_files(dldir):  # 取得済みチェックのための関数
-    utaid_files = {}
-    for root, _, files in os.walk(dldir):
-        for name in files:
-            if not name.lower().endswith(".ass"):
-                continue
-            assf = os.path.join(root, name)
-            try:
-                with open(assf, "r", encoding="utf-8") as f:
-                    for line in f:
-                        m = re.match(r";utaid=(\d+)", line)
-                        if m:
-                            utaid = m.group(1)
-                            utaid_files.setdefault(utaid, []).append(assf)
-                            break
-            except Exception as e:
-                print(f"読込失敗: {assf}: {e}")
-    return utaid_files
+def write_ass(sinfo,fname):         # ass作成（総合）
+    mp4f = os.path.splitext(fname)[0] + ".mp4"
+    assf = os.path.splitext(fname)[0] + ".ass"
+    if os.path.exists(mp4f):
+        durat = get_video_duration(mp4f)
+    else:
+        durat = get_ytmusic_duration(vidids[0])
+    if not durat:
+        print(f"write_ass エラー: duration取得失敗")
+        return False
+    write_ass_sinfo(sinfo,assf)
+    write_ass_diag(sinfo,assf,durat)
+    if not os.path.exists(assf):
+        print(f"write_ass エラー: assf作成失敗")
+        return False
+    return True
+
+def get_pl_vidids(plid):        # プレイリスト一覧取得
+    try:
+        cmd = [ YTDLP,
+            "--flat-playlist",
+            "--dump-single-json",
+            f"https://www.youtube.com/playlist?list={plid}", ]
+        data = json.loads(subprocess.check_output(
+            cmd, text=True, encoding="utf-8",
+            creationflags=subprocess.CREATE_NO_WINDOW
+            ))
+        return [ e["id"]
+            for e in data.get("entries", [])
+            if e and "id" in e ]
+    except subprocess.CalledProcessError as e:
+        print("output=", repr(e.output))
+        return None
 
 # メイン
+scr_utaids = collect_ids("utaid")
 with open("mochi2_makepl.json", "r", encoding="utf-8") as f:
     plists = json.load(f)
 for i, plst in enumerate(plists):
@@ -311,88 +352,107 @@ for i, plst in enumerate(plists):
     Path(dldir).mkdir(parents=True, exist_ok=True)
     batf = dldir + "!dl.bat"
     with open(batf, "w", encoding="cp932") as f:
-        f.write("../bin/yt-dlp -U\n")
-    utaid_files = getutaid_files(dldir)
+        f.write(f"{YTDLP} -U\n")
 
 # 歌ネット
     if plst['pltype'] == "uta-net":
+        nglist = ["TVsize","TVサイズ","ジャニーズ"]
         page = requests.get(plst['url']).text
         pattern = re.compile(r'<a href="/song/(\d+)/">(.*?)</a>\s*/\s*(.*?)</td>')
+        songs = []
         for utaid, pgttl, pgart in pattern.findall(page):
+            if scr_utaids.get(utaid):   # 存在する曲除外
+                continue
             if int(utaid) < 300000:     # 古い曲除外
                 continue
+            sinfo = search_utanet(utaid)
+            vidids = get_vidids(utaid)
+            if any(ng in sinfo['title'] for ng in nglist):  # nglistにある
+                print(f"nglist {utaid} / {pgttl} / {vidids[0]}")
+                continue
+            songs.append((utaid, pgttl, pgart, sinfo, vidids))
+            sinfo['mtype'] = "mv"       # mv.mp4のbat記述
+            sinfo['vidid'] = vidids[0]
+            fname0 = get_fname(dldir, sinfo)
+            if not os.path.exists(fname0):
+                print(f"yt-dlp {utaid} / {pgttl} / {vidids[0]}")
+                append_ytdlp_cmd(batf, fname0, vidids[0])
+            if len(vidids) < 2:
+                print(f"★ERROR vididが1つだけ {utaid} / {pgttl} / {vidids[0]}")
+                continue
+            audf = fname0               # youtube.mp4のbat記述
+            sinfo['mtype'] = "youtube_vid"
+            vidf = get_fname(dldir, sinfo)
+            sinfo['mtype'] = "youtube"
+            fname1 = get_fname(dldir, sinfo)
+            if not os.path.exists(fname1):
+                if not os.path.exists(vidf):
+                    append_ytdlp_cmd(batf, vidf, vidids[1])
+                append_loopedit_cmd(batf,vidf,audf,fname1)
+        # .bat実行
+        with open(batf, "a", encoding="cp932") as f:
+            f.write("timeout 60\n")
+        subprocess.run([batf], shell=True)
+        # ass作成
+        for utaid, pgttl, pgart, sinfo, vidids in songs:
+            sinfo['mtype'] = "mv"       # mv.assの作成
+            sinfo['vidid'] = vidids[0]
+            sinfo.pop('loopvid', None)
+            assf0 = get_fname(dldir, sinfo, "ass")
+            write_ass(sinfo,assf0)
+            sinfo['mtype'] = "youtube"  # youtube.assの作成
+            sinfo['vidid'] = vidids[0]
+            sinfo['loopvid'] = vidids[1]
+            assf1 = get_fname(dldir, sinfo, "ass")
+            write_ass(sinfo,assf1)
+        for f in Path(dldir).glob("*_vid.mp4"):     # 中間ファイル削除
+            f.unlink()
 
-            sinfo = vidids = None
-            if any( assf.endswith(" mv.ass") and
-                os.path.exists(os.path.splitext(assf)[0] + ".mp4")
-                for assf in utaid_files.get(utaid, []) ):
-                print(f"mvあり {utaid} / {pgttl}")
-            else:
-                print(f"mvなし {utaid} / {pgttl}")
-                sinfo = search_utanet(utaid)
-                if not sinfo['title']:
-                    print(f"★ERROR titleなし {utaid} / {pgttl}")
-                    continue
-                sinfo['mtype'] = "mv"
-                vidids = get_vidids(utaid)
-                sinfo['vidid'] = vidids[0]
-                fname0 = get_fname(dldir, sinfo)
-                if not os.path.exists(fname0):
-                    print(f" mp4なし {utaid} / {pgttl}")
-                    append_ytdlp_cmd(batf, fname0, vidids[0])
-                assf0 = os.path.splitext(fname0)[0] + ".ass"
-                if not os.path.exists(assf0):
-                    print(f" assなし {utaid} / {pgttl}")
-                    if os.path.exists(fname0):
-                        durat = get_video_duration(fname0)
-                    else:
-                        durat = get_ytmusic_duration(vidids[0])
-                    if not durat:
-                        print(f"★ERROR duratなし {utaid} / {pgttl} / {vidids[0]}")
-                        continue
-                    write_ass_sinfo(sinfo,assf0)
-                    write_ass_diag(sinfo,assf0,durat)
-            if flg_mkyoutube == 0: continue
-
-            if any( assf.endswith(" youtube.ass") and
-                os.path.exists(os.path.splitext(assf)[0] + ".mp4")
-                for assf in utaid_files.get(utaid, []) ):
-                print(f"youtubeあり {utaid} / {pgttl}")
-            else:
-                print(f"youtubeなし {utaid} / {pgttl}")
-                if not sinfo: sinfo = search_utanet(utaid)
-                if not sinfo['title']:continue
-                sinfo['mtype'] = "mv"
-                audf = get_fname(dldir, sinfo)
-                sinfo['mtype'] = "youtube_vid"
-                vidf = get_fname(dldir, sinfo)
-                sinfo['mtype'] = "youtube"
-                fname1 = get_fname(dldir, sinfo)
-                if not os.path.exists(fname1):
-                    if not vidids: vidids = get_vidids(utaid)
-                    if len(vidids) < 2:
-                        print(f"★ERROR vididが1つだけ {utaid} / {pgttl} / {vidids[0]}")
-                        continue
-                    if not os.path.exists(vidf):
-                        append_ytdlp_cmd(batf, vidf, vidids[1])
-                    append_loopedit_cmd(batf,vidf,audf,fname1)
-
-                assf1 = os.path.splitext(fname1)[0] + ".ass"
-                if not os.path.exists(assf1):
-                    if not vidids: vidids = get_vidids(utaid)
-                    sinfo['vidid']   = vidids[0]
-                    sinfo['loopvid'] = vidids[1]
-                    durat = get_ytmusic_duration(vidids[0])
-                    if not durat: continue
-                    write_ass_sinfo(sinfo,assf1)
-                    write_ass_diag(sinfo,assf1,durat)
-
-    
-
-    with open(batf, "a", encoding="cp932") as f:
-        f.write("pause\n")
-
-                    
+# # ytplist FirstTakeなど
+#     if plst['pltype'] == "ytplist":
+#         # フォルダ指定があった場合はフォルダのなかでだけ探す
+#         if plst.get('folder'):
+#             scr_vidids = collect_ids("vidid",scrbased + plst.get('folder'))
+#         else:
+#             scr_vidids = collect_ids("vidid")           
+#         vidids = get_pl_vidids(plst.get('plid'))
+#         for vidid in vidids[:20]:
+#             if scr_vidids.get(vidid):
+#                 continue                # ckfilesにあれば除外
+#             tini = dlbased + plst['name'] + "/!mochi2err.txt"
+#             if readini("no_utaid",vidid,tini):
+#                 print(f" 歌詞なし {vidid}")
+#                 continue                # ★ no_utaid にあれば除外
+#             yinfo = get_youtube_info(vidid)
+#             if not yinfo:
+#                 print(f" no yinfo vidid={vidid}")
+#                 uwsc_dialog()
+#                 continue
+#             s = f"{yinfo.get('track') or ''} {yinfo.get('artist') or ''}"
+#             s = s.replace("\xa0", " ").replace("-"," ").replace("/"," ").replace("  "," ")
+#             s = s.replace("THE FIRST TAKE","")
+#             print(f"ckecking... {URLYT}{vidid} , {repr(s)}")
+#             utaid = search_site(s)
+#             if not utaid:
+#                 print(f" no utaid search={repr(s)}")
+#                 writeini("no_utaid",vidid,f"{URLYT}{vidid} {s}",tini)
+#                 uwsc_dialog()
+#                 continue
+#             print(f"ckecking... {URLUTAM}{utaid}/ , {repr(s)}")
+#             sinfo = search_utanet(utaid)
+#             print(f" track  yt={yinfo.get('track')}")
+#             print(f"       uta={sinfo.get('title')}")
+#             print(f" artist yt={yinfo.get('artist')}")
+#             print(f"       uta={sinfo.get('artist')}")
+#             # ★ここで照合のプロセス入れたほうがいい
+#             # 存在チェック、ytplistの場合ほかのフォルダも見る
+#             basepat = os.path.basename(get_fname(dldir, sinfo)[:-4])
+#             mp4s = glob.glob(f"{glob.escape(dlbased)}/**/{glob.escape(basepat)}*.mp4", recursive=True)
+#             asss = glob.glob(f"{glob.escape(dlbased)}/**/{glob.escape(basepat)}*.ass", recursive=True)
+#             if mp4s and asss:
+#                 print(f" 作成済み {sinfo.get('title')}")
+#                 continue
+#             make_mp4_ass(plst,sinfo,[vidid])
 
 
 

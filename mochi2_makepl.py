@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 # pip install requests
 # pip install ytmusicapi
-import os, sys, json, re, glob, requests, pickle, shutil, subprocess
+import os, sys, json, re, glob, requests, pickle, shutil, subprocess, time
 from urllib.parse import quote
 from pathlib import Path
 from datetime import datetime
@@ -16,7 +16,7 @@ if len(sys.argv) == 1:
     debug_idxs = set()                  # 引数なし → 全部走行
 else:
     debug_idxs = {int(x) for x in sys.argv[1:]}   # 指定された番号だけ
-debug_idxs = {0}  # 特定走行モード
+debug_idxs = {6}  # 特定走行モード
 
 NOIMG = "images/noimg.png"
 karapath = open("../Apache24/conf/httpd-mochikara.conf", encoding="utf-8")\
@@ -133,14 +133,20 @@ def emoji(fname):                   # 絵文字分類表示
 
 def get_utanet_views(utaid):
     url = f"https://www.uta-net.com/song/{utaid}/"
-    try:
-        page = requests.get(url).text
-        m = re.search(r'表示回数：\s*([\d,]+)回', page)
-        if not m:
-            return 0
-        return int(m.group(1).replace(",", ""))
-    except:
-        return 0
+    for attempt in range(3):
+        try:
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            page = response.text
+            m = re.search(r'表示回数：\s*([\d,]+)回', page)
+            if m:
+                return int(m.group(1).replace(",", ""))
+        except:
+            pass
+        if attempt < 2:
+            time.sleep(10)
+    print(f"表示回数取得失敗:{utaid}")
+    return 0
 
 def collect_ids(uvid,ass_dir = scrbased):     # ids集計 uvid = utaid or vidid
     cache_file = Path(f"../tmp/mochi2cache_{uvid}.pkl")
