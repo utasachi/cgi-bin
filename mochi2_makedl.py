@@ -1,13 +1,14 @@
 #!c:/mochikara2/.venv/Scripts/pythonw.exe
 # -*- coding: utf-8 -*-
 debug_idxs = set()  # 全部走行
-debug_idxs = {6}    # 特定走行モード
+debug_idxs = {17}    # 特定走行モード
 flg_mkyoutube = 1     # 動画タイプyoutubeをloopeditするか否か
 
 import os, sys, json, re, pickle, html, subprocess, glob, configparser,shutil
 import requests, time
 from urllib.parse import quote, parse_qs
 from pathlib import Path
+from difflib import SequenceMatcher
 import ytmusicapi
 ytmusic = ytmusicapi.YTMusic()
 sys.stdout.reconfigure(encoding='utf-8')
@@ -15,6 +16,7 @@ os.chdir(Path(__file__).resolve().parent)
 
 YTDLP  = r"C:\mochikara2\bin\yt-dlp"
 FFMPEG = r"C:\mochikara2\bin\ffmpeg"
+FFPROB = r"C:\mochikara2\bin\ffprobe"
 karapath = bgvpath = ""
 with open("../Apache24/conf/httpd-mochikara.conf", encoding="utf-8") as f:
     for line in f:
@@ -34,7 +36,8 @@ def rep(s):                         # 文字列置き換え
         '^': '＾',  '`': '｀', '*': '＊',  '?': '？',
         '%': '％',  '$': '＄', '[': '［',  ']': '］',
         '@': '＠',  '　': ' ', ' ': ' ',   '+': '＋',
-        'é': 'e',   '&': '＆', '〜': '～', '⼥': '女'
+        'é': 'e',   '&': '＆', '〜': '～', '⼥': '女',
+        '⧸': '／'
     }
     s = html.unescape(s).replace('\xa0', ' ')
     for k, v in replacements.items():
@@ -49,6 +52,20 @@ def shorten_artist(name, limit=100):
     if len(shortened) > limit:                  # 3. それでも長ければ … 付けて切る
         shortened = shortened[:limit-1].rstrip() + "…"
     return shortened
+
+def readini(section, key, filename, default=""):        # configparser版readini
+    cfg = configparser.ConfigParser()
+    cfg.read(filename, encoding="utf-8")
+    return cfg.get(section, key, fallback=default)
+
+def writeini(section, key, value, filename):            # configparser版writeini
+    cfg = configparser.ConfigParser()
+    cfg.read(filename, encoding="utf-8")
+    if not cfg.has_section(section):
+        cfg.add_section(section)
+    cfg[section][key] = str(value)
+    with open(filename, "w", encoding="utf-8") as f:
+        cfg.write(f)
 
 def collect_ids(uvid,ass_dir = scrbased):     # ids集計 uvid = utaid or vidid
     cache_file = Path(f"../tmp/mochi2cache_{uvid}.pkl")
@@ -75,6 +92,13 @@ def collect_ids(uvid,ass_dir = scrbased):     # ids集計 uvid = utaid or vidid
     with open(cache_file, "wb") as f:               # キャッシュ保存
         pickle.dump(ids, f)
     return ids
+
+FENRIR = "https://search.fenrir-inc.com/?hl=ja&channel=sleipnir_s&safe=off&lr=all&fr=ss&q="
+def search_site(s, n=0):                # キーワードで歌ネット検索（n番目のhit,-1で全部返す）
+    # page = requests.get(FENRIR + "歌ネット 歌詞ページ " + quote(s)).text
+    page = requests.get(FENRIR + "site:uta-net.com " + quote(s)).text
+    hits = re.findall(r'https://www\.uta-net\.com/(?:song|movie)/(\d+)/', page)
+    return hits if n < 0 else hits[n] if n < len(hits) else ""
 
 def search_utanet(utaid):           # 歌ネットタグ取得
     time.sleep(1)
@@ -159,23 +183,26 @@ def get_fname(basedir, tag, ext="mp4",mmtype=""):   # tagからファイルパ�
         fname = f"{basedir.rstrip('/')}/{tag['title']}／{artist}{mtype}.{ext}"
     return fname
 
-def append_ytdlp_cmd(batf, fname, vidid):
+def append_ytdlp_cmd(batf, vidid, fname=""):
+    if not fname:
+        ofname = ""
+    elif os.path.isdir(fname):
+        ofname = f'-P "{fname}"'
+    else:
+        ofname = f'-o "{fname}"'
     with open(batf, "a", encoding="cp932") as f:
-        f.write(f'{YTDLP} --no-overwrites -f "bv[height<=1080]+ba" --merge-output-format mp4 -N 1 -o "{fname}" -- {vidid}\n')
+        f.write(f'{YTDLP} --no-overwrites -f "bv[height<=1080]+ba" --merge-output-format mp4 -N 1 {ofname} -- {vidid}\n')
 
 def append_loopedit_cmd(batf, vidf, audf, fname):
     with open(batf, "a", encoding="cp932") as f:
         f.write(f'{FFMPEG} -n -stream_loop 5 -i "{vidf}" -i "{audf}" ' +
                 f'-shortest -map 0:v:0 -map 1:a -c:v copy -c:a copy "{fname}"\n')
 
-def is_drange(v, min=0, max=0):                         # 数値範囲内チェック
+def to_int(value, default=0):
     try:
-        n = int(v)
+        return int(value)
     except (TypeError, ValueError):
-        return False
-    if min == 0 and max == 0:
-        return True
-    return min <= n <= max
+        return default
 
 def get_inif(filepath, enc=""):         # iniファイルの読み込み（簡易版）
     result = {}
@@ -202,7 +229,7 @@ def mmss(duration_seconds):             # mm:ss表記はこれに統一
     return f"{minutes:02}:{seconds:02}"
 
 def get_video_duration(video):          # ffprobeからファイルのduration取得
-    cmd = [ "../bin/ffprobe.exe",
+    cmd = [ FFPROB,
             "-v", "error",
             "-show_entries", "format=duration",
             "-of", "default=noprint_wrappers=1:nokey=1",
@@ -258,13 +285,15 @@ def write_ass_diag(sinfo,assf,durat=0):                  # ass diag部分記入
             lines.append(line)
     # assのフォーマットはmoassのバージョンのものを使用
     diag = get_inif("../htdocs/moass_header.ass","utf-8")
-    if is_drange(sinfo.get('kstyle'),1,8):              # スタイル差し替え
+    kstyle = to_int(sinfo.get('kstyle'), 1)
+    if kstyle > 1 and kstyle < 9 :                      # スタイル差し替え
         for k, v in diag.items():
-            diag[k] = v.replace('Kanji1','Kanji' + sinfo['kstyle']) \
-                .replace('sInfo1','sInfo' + sinfo['kstyle']) \
-                .replace('sRuby1','sRuby' + sinfo['kstyle'])
-    lines.append(diag[';f01'] + sinfo['title'] +"\n")       # 曲情報歌詞記入
-    artist = sinfo['artist']                                # artist名長いの対応
+            kstyle = str(kstyle)
+            diag[k] = v.replace('Kanji1','Kanji' + kstyle) \
+                .replace('sInfo1','sInfo' + kstyle) \
+                .replace('sRuby1','sRuby' + kstyle)
+    lines.append(diag[';f01'] + sinfo['title'] +"\n")   # 曲情報歌詞記入
+    artist = sinfo['artist']                            # artist名長いの対応
     if len(artist) > 56:
         artist = shorten_artist(sinfo['artist'],56)
     if len(artist) > 32:
@@ -284,10 +313,10 @@ def write_ass_diag(sinfo,assf,durat=0):                  # ass diag部分記入
     if diag.get(';f08') and sinfo.get('vidname'):
         lines.append(diag[';f08'] + shorten_artist(sinfo['vidname'],36) +"\n")
     ystart = 480
-    if is_drange(sinfo.get('ystart')):
+    if sinfo.get('ystart'):
         ystart = int(sinfo['ystart'])
     yend = 200
-    if is_drange(sinfo.get('yend')):
+    if sinfo.get('yend'):
         yend   = int(sinfo['yend'])
     t1 = ystart
     t2 = yend - ((len(kashi) - 1) * 40)
@@ -340,6 +369,65 @@ def get_pl_vidids(plid):        # プレイリスト一覧取得
         print("output=", repr(e.output))
         return None
 
+def run_batf(batf):        # .bat実行
+    with open(batf, "a", encoding="cp932") as f:
+        f.write("timeout 60\n")
+    subprocess.run([batf], shell=True)
+
+def get_title_vidid(path):
+    name = Path(path).stem
+    m = re.match(r'^(.*?)\s*\[([^\]]+)\]$', name)
+    if not m:
+        return name, None
+    return m.group(1).strip(), m.group(2)
+
+def normalize_dash(text):
+    text = text.replace("–", "-")
+    return text.strip("-").strip()
+
+def remove_brackets(text):
+    return re.sub(r'\([^)]*\)|（[^）]*）|\[[^\]]*\]|［[^］]*］', '', text).strip()
+
+def similarity(a, b):
+    return int(SequenceMatcher(None, a, b).ratio() * 100)
+
+def get_video_size(mp4f):
+    cmd = [
+        FFPROB, "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=width,height",
+        "-of", "csv=s=x:p=0",
+        str(mp4f)
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        return None, None
+    width, height = map(int, result.stdout.strip().split("x"))
+    return width, height
+
+def search_youtube(keyword, n=10, exclude_keywords=None):
+    exclude_keywords = [x.lower() for x in (exclude_keywords or [])]
+    cmd = [YTDLP, "--flat-playlist", "--dump-single-json", "--quiet", f"ytsearch{n}:{keyword}"]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
+        if r.returncode != 0:
+            return []
+        entries = json.loads(r.stdout).get("entries", [])
+        videos, seen = [], set()
+        for v in entries:
+            vidid = v.get("id")
+            if not vidid or vidid in seen:
+                continue
+            seen.add(vidid)
+            text = " ".join(str(v.get(k) or "") for k in ("title", "description", "channel")).lower()
+            if any(kw in text for kw in exclude_keywords):
+                continue
+            videos.append(v)
+        return videos
+    except Exception as e:
+        print(f" YouTube検索失敗: {e}")
+        return []
+
 # メイン
 scr_utaids = collect_ids("utaid")
 with open("mochi2_makepl.json", "r", encoding="utf-8") as f:
@@ -356,7 +444,7 @@ for i, plst in enumerate(plists):
 
 # 歌ネット
     if plst['pltype'] == "uta-net":
-        nglist = ["TVsize","TVサイズ","ジャニーズ"]
+        nglist = ["TVsize","TVサイズ"]
         page = requests.get(plst['url']).text
         pattern = re.compile(r'<a href="/song/(\d+)/">(.*?)</a>\s*/\s*(.*?)</td>')
         songs = []
@@ -376,7 +464,7 @@ for i, plst in enumerate(plists):
             fname0 = get_fname(dldir, sinfo)
             if not os.path.exists(fname0):
                 print(f"yt-dlp {utaid} / {pgttl} / {vidids[0]}")
-                append_ytdlp_cmd(batf, fname0, vidids[0])
+                append_ytdlp_cmd(batf, vidids[0], fname0)
             if len(vidids) < 2:
                 print(f"★ERROR vididが1つだけ {utaid} / {pgttl} / {vidids[0]}")
                 continue
@@ -387,12 +475,9 @@ for i, plst in enumerate(plists):
             fname1 = get_fname(dldir, sinfo)
             if not os.path.exists(fname1):
                 if not os.path.exists(vidf):
-                    append_ytdlp_cmd(batf, vidf, vidids[1])
+                    append_ytdlp_cmd(batf, vidids[1], vidf)
                 append_loopedit_cmd(batf,vidf,audf,fname1)
-        # .bat実行
-        with open(batf, "a", encoding="cp932") as f:
-            f.write("timeout 60\n")
-        subprocess.run([batf], shell=True)
+        run_batf(batf)
         # ass作成
         for utaid, pgttl, pgart, sinfo, vidids in songs:
             sinfo['mtype'] = "mv"       # mv.assの作成
@@ -408,52 +493,125 @@ for i, plst in enumerate(plists):
         for f in Path(dldir).glob("*_vid.mp4"):     # 中間ファイル削除
             f.unlink()
 
-# # ytplist FirstTakeなど
-#     if plst['pltype'] == "ytplist":
-#         # フォルダ指定があった場合はフォルダのなかでだけ探す
-#         if plst.get('folder'):
-#             scr_vidids = collect_ids("vidid",scrbased + plst.get('folder'))
-#         else:
-#             scr_vidids = collect_ids("vidid")           
-#         vidids = get_pl_vidids(plst.get('plid'))
-#         for vidid in vidids[:20]:
-#             if scr_vidids.get(vidid):
-#                 continue                # ckfilesにあれば除外
-#             tini = dlbased + plst['name'] + "/!mochi2err.txt"
-#             if readini("no_utaid",vidid,tini):
-#                 print(f" 歌詞なし {vidid}")
-#                 continue                # ★ no_utaid にあれば除外
-#             yinfo = get_youtube_info(vidid)
-#             if not yinfo:
-#                 print(f" no yinfo vidid={vidid}")
-#                 uwsc_dialog()
-#                 continue
-#             s = f"{yinfo.get('track') or ''} {yinfo.get('artist') or ''}"
-#             s = s.replace("\xa0", " ").replace("-"," ").replace("/"," ").replace("  "," ")
-#             s = s.replace("THE FIRST TAKE","")
-#             print(f"ckecking... {URLYT}{vidid} , {repr(s)}")
-#             utaid = search_site(s)
-#             if not utaid:
-#                 print(f" no utaid search={repr(s)}")
-#                 writeini("no_utaid",vidid,f"{URLYT}{vidid} {s}",tini)
-#                 uwsc_dialog()
-#                 continue
-#             print(f"ckecking... {URLUTAM}{utaid}/ , {repr(s)}")
-#             sinfo = search_utanet(utaid)
-#             print(f" track  yt={yinfo.get('track')}")
-#             print(f"       uta={sinfo.get('title')}")
-#             print(f" artist yt={yinfo.get('artist')}")
-#             print(f"       uta={sinfo.get('artist')}")
-#             # ★ここで照合のプロセス入れたほうがいい
-#             # 存在チェック、ytplistの場合ほかのフォルダも見る
-#             basepat = os.path.basename(get_fname(dldir, sinfo)[:-4])
-#             mp4s = glob.glob(f"{glob.escape(dlbased)}/**/{glob.escape(basepat)}*.mp4", recursive=True)
-#             asss = glob.glob(f"{glob.escape(dlbased)}/**/{glob.escape(basepat)}*.ass", recursive=True)
-#             if mp4s and asss:
-#                 print(f" 作成済み {sinfo.get('title')}")
-#                 continue
-#             make_mp4_ass(plst,sinfo,[vidid])
+# ytplist FirstTakeなど
+    if plst['pltype'] == "ytplist":
+        # フォルダ指定があった場合はフォルダのなかでだけ探す
+        if plst.get('folder'):
+            scr_vidids = collect_ids("vidid",scrbased + plst.get('folder'))
+        else:
+            scr_vidids = collect_ids("vidid")
+        vidids = get_pl_vidids(plst.get('plid'))
+        tini = dlbased + plst['name'] + "/!mochi2err.txt"
+        for vidid in vidids[:plst['download']]:
+            if scr_vidids.get(vidid):
+                continue                # ckfilesにあれば除外
+            if readini("no_utaid",vidid,tini):
+                print(f" no_utaid {vidid}")
+                continue                # ★ no_utaid にあれば除外
+            print(f"yt-dlp {vidid}")
+            append_ytdlp_cmd(batf, vidid, dldir)
+        # run_batf(batf)
 
+        # loopedit作成
+        batf2 = dldir + "!dl2.bat"
+        with open(batf2, "w", encoding="cp932") as f:
+            f.write(f"{YTDLP} -U\n")
+        for mp4f in Path(dldir).glob("*.mp4"):
+            assf = mp4f.with_suffix(".ass")
+            # 間引き
+            ftitle,vidid = get_title_vidid(mp4f)
+            if any(keyword.lower() in ftitle.lower() for keyword in plst.get('exclude_keywords', [])):
+                print(f"【exclude_keywords】{ftitle}")
+                mp4f.unlink(missing_ok=True)
+                assf.unlink(missing_ok=True)
+                if vidid:
+                    writeini("no_utaid",vidid,f"https://www.youtube.com/watch?v={vidid} exclude_keywords {ftitle}",tini)
+                continue
+            keyw = ystart = msg1 = ""
+            mtype = "mv"
+            # utaid特定パターン
+            m01 = re.match(r'^(.+?)\s+-\s+(.+?)\s+[/\u29F8]\s+THE FIRST TAKE\s+\[([^\]]+)\]$', ftitle)
+            if m01:
+                msg1 = f'THE FIRST TAKE:{vidid} = {ftitle}'
+                keyw = rep(m01.group(2)) + " " + rep(m01.group(1))
+            else:
+                if vidid:
+                    msg1 = f'その他(vididあり):{vidid} = {ftitle}'
+                else:
+                    msg1 = f'その他(vididなし):{vidid} = {ftitle}'
+                keyw = rep(normalize_dash(ftitle))
+                if plst.get('prefix_keyword'):
+                    keyw = plst.get('prefix_keyword') + " " + keyw
+
+            # 歌詞検索
+            utaids = search_site(keyw, -1)
+            if not utaids:
+                keyw2 = remove_brackets(keyw)
+                utaids = search_site(keyw2, -1)
+                if not utaids:
+                    print(f"[no_utaid]{msg1} {keyw2}")
+                    writeini("no_utaid", vidid, f"https://www.youtube.com/watch?v={vidid} search {keyw}", tini)
+                    continue
+            else:
+                keyw2 = keyw
+            # 照合
+            threshold = plst.get("diff_title", 0)
+            if threshold:
+                title1 = remove_brackets(rep(normalize_dash(ftitle))).lower()
+                utaid = ""
+                matches = []
+                for uid in utaids:
+                    sinfo = search_utanet(uid)
+                    if not sinfo:
+                        continue
+                    title2 = remove_brackets(sinfo['title']).lower()
+                    rate = similarity(title1, title2)
+                    matches.append(f"{rate:.1f}%:{uid}:{sinfo['title']}")
+                    if rate >= threshold:
+                        utaid = uid
+                        msg1 = f"[{rate:.1f}%]" + msg1
+                        break
+                if not utaid:
+                    # ★ uta-netからダイレクトに取得するのやりたいなあ
+                    print(f"[diff_title] {msg1} {' / '.join(matches)}")
+                    writeini("diff_title", vidid, f"https://www.youtube.com/watch?v={vidid} search {keyw2}", tini)
+                    continue
+            else:
+                utaid = utaids[0]
+                sinfo = search_utanet(utaid)
+            print(f"{msg1} | {utaid} {sinfo['title']} {sinfo['artist']}")
+
+            # loop編集(差し替え)
+            w,h = get_video_size(mp4f)
+            if w / h < 1.2:
+                keyw = f"{plst.get('prefix_keyword')} {sinfo['title']}"
+                exclude_keywords = [ "provided to youtube by", "official audio", "配信楽曲ダウンロード情報" ]
+                videos = search_youtube(keyw, 10, exclude_keywords)
+                for v in videos:
+#                    print(json.dumps(video, ensure_ascii=False, indent=2))
+                    print(f" https://www.youtube.com/watch?v={v['id']}  {v.get('title', '')}")
+                if not videos:
+                    print(f"[no_loopvid] https://www.youtube.com/watch?v={vidid} {keyw}")
+                    writeini("no_loopvid", vidid, f"https://www.youtube.com/watch?v={vidid} search {keyw}", tini)
+                    continue
+                loopvid = videos[0].get('id')
+                if not os.path.exists(vidf):
+                    append_ytdlp_cmd(batf, vidids[1], vidf)
+                append_loopedit_cmd(batf,vidf,audf,fname1)
+                
+            exit()
+
+
+            sinfo['mtype'] = "mv"       # mv.assの作成
+            if vidid:
+                sinfo['vidid'] = vidid
+            if plst.get('folder'):
+                sinfo['subdir'] = plst.get('folder')
+            if re.search(r"THE\s+FIRST\s+TAKE", mp4f.stem):
+                sinfo['mtype'] = "THE FIRST TAKE"
+                sinfo['ystart'] = 960
+                sinfo['kstyle'] = 2
+            write_ass(sinfo,str(assf))
 
 
 exit()
@@ -500,19 +658,6 @@ exit()
 #         print(f"exit code={res.returncode}")
 #         exit(0)
 
-# def readini(section, key, filename, default=""):        # configparser版readini
-#     cfg = configparser.ConfigParser()
-#     cfg.read(filename, encoding="utf-8")
-#     return cfg.get(section, key, fallback=default)
-
-# def writeini(section, key, value, filename):            # configparser版writeini
-#     cfg = configparser.ConfigParser()
-#     cfg.read(filename, encoding="utf-8")
-#     if not cfg.has_section(section):
-#         cfg.add_section(section)
-#     cfg[section][key] = str(value)
-#     with open(filename, "w", encoding="utf-8") as f:
-#         cfg.write(f)
 
 # def collect_ids(uvid,ass_dir = scrbased):     # ids集計 uvid = utaid or vidid
 #     cache_file = Path(f"../tmp/mochi2cache_{uvid}.pkl")

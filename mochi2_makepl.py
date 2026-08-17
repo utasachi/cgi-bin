@@ -12,11 +12,15 @@ sys.stdout.reconfigure(encoding='utf-8')
 os.chdir(Path(__file__).resolve().parent)
 print("Content-Type: text/html; charset=UTF-8\r\n")
 
+RETRY_COUNT = 5                                     # 試行回数
 if len(sys.argv) == 1:
-    debug_idxs = set()                  # 引数なし → 全部走行
+    debug_idxs = set()                              # 引数なし → 全部走行
 else:
-    debug_idxs = {int(x) for x in sys.argv[1:]}   # 指定された番号だけ
-debug_idxs = {6}  # 特定走行モード
+    debug_idxs = {int(x) for x in sys.argv[1:]}     # 指定された番号だけ
+# debug_idxs = {2,3,6,8,9,10,11}                      # 特定走行モード
+debug_idxs = {10,11}                      # 特定走行モード
+for f in Path("../tmp").glob("mochi2cache_*.pkl"):  # キャッシュ全消し
+    f.unlink()
 
 NOIMG = "images/noimg.png"
 karapath = open("../Apache24/conf/httpd-mochikara.conf", encoding="utf-8")\
@@ -132,8 +136,11 @@ def emoji(fname):                   # 絵文字分類表示
     return emoji
 
 def get_utanet_views(utaid):
+    if not utaid:
+        print(f" 【ERROR】utaidなし")
+        return 0
     url = f"https://www.uta-net.com/song/{utaid}/"
-    for attempt in range(3):
+    for attempt in range(RETRY_COUNT):
         try:
             response = requests.get(url, timeout=10)
             response.raise_for_status()
@@ -143,9 +150,9 @@ def get_utanet_views(utaid):
                 return int(m.group(1).replace(",", ""))
         except:
             pass
-        if attempt < 2:
+        if attempt < RETRY_COUNT - 1:
             time.sleep(10)
-    print(f"表示回数取得失敗:{utaid}")
+    print(f" 【ERROR】表示回数取得失敗:{utaid}")
     return 0
 
 def collect_ids(uvid,ass_dir = scrbased):     # ids集計 uvid = utaid or vidid
@@ -236,7 +243,11 @@ def url_youtube(vidid):
 
 def html_sinfo_tr(nocnt, ckfiles, views = 0, plorder = -1):  # sinfo行情報作成
     # 指定がなければ最終行、指定することもできる
-    if plorder is None: plorder = -1
+    if plorder is None:
+        plorder = -1
+    if ckfiles is None:
+        print(" ERROR: ckfiles is None")
+        return
     mp4f = karapath + ckfiles[plorder]
     assf = str(Path(mp4f).with_suffix(".ass"))
     sinfo = read_ass_sinfo(assf)
@@ -502,6 +513,8 @@ def mk_pl_ytplist(plst):                    # youtubeプレイリスト（フォ
         # フォルダ指定がない場合にはutaidの再検索あり
         else:
             ckfiles_utaid = scr_utaids.get(utaid)
+            if not ckfiles_utaid:
+                continue
             songs.append((views, ckfiles_utaid))
         print(vidid, utaid, sinfo.get('title'), sinfo.get('artist'), views)
     if plst.get("sort") == "reverse":
@@ -572,7 +585,7 @@ with open("mochi2_makepl.json", "r", encoding="utf-8") as f:
     plists = json.load(f)
 for i, plst in enumerate(plists):
     if debug_idxs and i not in debug_idxs: continue
-    print(f"プレイリスト:{plst['name']} pltype={plst['pltype']}")
+    print(f"■プレイリスト:{plst['name']} pltype={plst['pltype']}")
     if plst['pltype'] == "index":
         mk_pl_index(plst)
 #        mk_thumbimgs(plst)
