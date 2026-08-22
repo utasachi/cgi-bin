@@ -6,7 +6,7 @@ flg_mkyoutube = 1     # 動画タイプyoutubeをloopeditするか否か
 
 import os, sys, json, re, pickle, html, subprocess, glob, configparser,shutil
 import requests, time
-from urllib.parse import quote, parse_qs
+from urllib.parse import quote, quote_plus, parse_qs
 from pathlib import Path
 from difflib import SequenceMatcher
 import ytmusicapi
@@ -100,7 +100,24 @@ def search_site(s, n=0):                # キーワードで歌ネット検索�
     hits = re.findall(r'https://www\.uta-net\.com/(?:song|movie)/(\d+)/', page)
     return hits if n < 0 else hits[n] if n < len(hits) else ""
 
-def search_utanet(utaid):           # 歌ネットタグ取得
+def search_utakeyw(keyword):
+    url = f"https://www.uta-net.com/search/?Keyword={quote_plus(keyword)}"
+    for retry in range(2):
+        try:
+            page = requests.get(url, timeout=10).text
+            if "現在、上記検索条件に該当する歌詞はございません。" in page:
+                return ""
+            if re.search(r'1曲中\s*1-1曲を表示', page):
+                m = re.search(r'href="/song/(\d+)/"', page)
+                if m:
+                    return m.group(1)
+        except Exception:
+            pass
+        if retry == 0:
+            time.sleep(10)
+    return ""
+
+def search_utaid(utaid):           # 歌ネットタグ取得
     time.sleep(1)
     requrl = f"https://www.uta-net.com/song/{utaid}/"
     tag = {}
@@ -110,7 +127,7 @@ def search_utanet(utaid):           # 歌ネットタグ取得
         title = m.group(1).strip() if m else ""
         if title != "Just a moment...": break
         if retry == 0:
-            print(f"search_utanet 10秒後に再試行します: utaid={utaid}")
+            print(f"search_utaid 10秒後に再試行します: utaid={utaid}")
             time.sleep(10)
 
     m = re.search(r'<h2 class="ms-2 ms-md-3 kashi-title">(.+?)</h2>', texts)
@@ -453,7 +470,7 @@ for i, plst in enumerate(plists):
                 continue
             if int(utaid) < 300000:     # 古い曲除外
                 continue
-            sinfo = search_utanet(utaid)
+            sinfo = search_utaid(utaid)
             vidids = get_vidids(utaid)
             if any(ng in sinfo['title'] for ng in nglist):  # nglistにある
                 print(f"nglist {utaid} / {pgttl} / {vidids[0]}")
@@ -505,9 +522,9 @@ for i, plst in enumerate(plists):
         for vidid in vidids[:plst['download']]:
             if scr_vidids.get(vidid):
                 continue                # ckfilesにあれば除外
-            if readini("no_utaid",vidid,tini):
-                print(f" no_utaid {vidid}")
-                continue                # ★ no_utaid にあれば除外
+            # if readini("no_utaid",vidid,tini):
+            #     print(f" no_utaid {vidid}")
+            #     continue                # ★ no_utaid にあれば除外
             print(f"yt-dlp {vidid}")
             append_ytdlp_cmd(batf, vidid, dldir)
         # run_batf(batf)
@@ -543,6 +560,9 @@ for i, plst in enumerate(plists):
                 if plst.get('prefix_keyword'):
                     keyw = plst.get('prefix_keyword') + " " + keyw
 
+            if os.path.exists(assf):
+                continue        # いったん飛ばし
+
             # 歌詞検索
             utaids = search_site(keyw, -1)
             if not utaids:
@@ -561,7 +581,7 @@ for i, plst in enumerate(plists):
                 utaid = ""
                 matches = []
                 for uid in utaids:
-                    sinfo = search_utanet(uid)
+                    sinfo = search_utaid(uid)
                     if not sinfo:
                         continue
                     title2 = remove_brackets(sinfo['title']).lower()
@@ -572,35 +592,18 @@ for i, plst in enumerate(plists):
                         msg1 = f"[{rate:.1f}%]" + msg1
                         break
                 if not utaid:
-                    # ★ uta-netからダイレクトに取得するのやりたいなあ
-                    print(f"[diff_title] {msg1} {' / '.join(matches)}")
-                    writeini("diff_title", vidid, f"https://www.youtube.com/watch?v={vidid} search {keyw2}", tini)
-                    continue
+                    # uta-netからドンピシャ１件取得する
+                    utaid = search_utakeyw(title1)
+                    if not utaid:
+                        print(f"[diff_title] {msg1} {' / '.join(matches)}")
+                        writeini("diff_title", vidid, f"https://www.youtube.com/watch?v={vidid} search {keyw2}", tini)
+                        continue
+                    sinfo = search_utaid(utaid)
+                    msg1 = "[1曲中1曲]" + msg1
             else:
                 utaid = utaids[0]
-                sinfo = search_utanet(utaid)
+                sinfo = search_utaid(utaid)
             print(f"{msg1} | {utaid} {sinfo['title']} {sinfo['artist']}")
-
-            # loop編集(差し替え)
-            w,h = get_video_size(mp4f)
-            if w / h < 1.2:
-                keyw = f"{plst.get('prefix_keyword')} {sinfo['title']}"
-                exclude_keywords = [ "provided to youtube by", "official audio", "配信楽曲ダウンロード情報" ]
-                videos = search_youtube(keyw, 10, exclude_keywords)
-                for v in videos:
-#                    print(json.dumps(video, ensure_ascii=False, indent=2))
-                    print(f" https://www.youtube.com/watch?v={v['id']}  {v.get('title', '')}")
-                if not videos:
-                    print(f"[no_loopvid] https://www.youtube.com/watch?v={vidid} {keyw}")
-                    writeini("no_loopvid", vidid, f"https://www.youtube.com/watch?v={vidid} search {keyw}", tini)
-                    continue
-                loopvid = videos[0].get('id')
-                if not os.path.exists(vidf):
-                    append_ytdlp_cmd(batf, vidids[1], vidf)
-                append_loopedit_cmd(batf,vidf,audf,fname1)
-                
-            exit()
-
 
             sinfo['mtype'] = "mv"       # mv.assの作成
             if vidid:
@@ -612,6 +615,33 @@ for i, plst in enumerate(plists):
                 sinfo['ystart'] = 960
                 sinfo['kstyle'] = 2
             write_ass(sinfo,str(assf))
+
+#            # loop編集(差し替え)
+#             w,h = get_video_size(mp4f)
+#             if w / h < 1.2:
+#                 keyw = f"{plst.get('prefix_keyword')} {sinfo['title']} {remove_brackets(sinfo['artist'])}"
+#                 exclude_keywords = [ "provided to youtube by", "official audio", "配信楽曲ダウンロード情報" ]
+#                 videos = search_youtube(keyw, 10, exclude_keywords)
+#                 for v in videos:
+# #                    print(json.dumps(video, ensure_ascii=False, indent=2))
+#                     print(f" https://www.youtube.com/watch?v={v['id']}  {v.get('title', '')}")
+#                 if not videos:
+#                     print(f"[no_loopvid] https://www.youtube.com/watch?v={vidid} {keyw}")
+#                     writeini("no_loopvid", vidid, f"https://www.youtube.com/watch?v={vidid} search {keyw}", tini)
+#                     continue
+#                 loopvid = videos[0].get('id')
+#                 audf = mp4f
+#                 sinfo['mtype'] = "youtube_vid"
+#                 vidf = get_fname(dldir, sinfo)
+#                 sinfo['mtype'] = "youtube"
+#                 fname1 = get_fname(dldir, sinfo)
+#                 if not os.path.exists(fname1):
+#                     if not os.path.exists(vidf):
+#                         append_ytdlp_cmd(batf2, loopvid, vidf)
+#                     append_loopedit_cmd(batf2,vidf,audf,fname1)
+
+#             exit()
+
 
 
 exit()
@@ -1173,7 +1203,7 @@ exit()
 #     if "uta-net" in utaid:
 #         utaid = utaid.rstrip("/").split("/")[-1]
 #     print(f"utaid={utaid},audseq={audseq},vidseq={vidseq}",flush=True)
-#     sinfo = search_utanet(utaid)
+#     sinfo = search_utaid(utaid)
 #     if not sinfo.get('title'):
 #         print(f"not utaid {utaid}",flush=True)
 #         return False
@@ -1218,7 +1248,7 @@ exit()
 #                 if not vidids:
 #                     print(f" no vidids!")
 #                     continue                # 関連動画なければ除外
-#                 sinfo = search_utanet(utaid)
+#                 sinfo = search_utaid(utaid)
 #                 # ★mv以外作成モードはお休み
 #                 # mp4s = glob.glob(glob.escape(get_fname(dldir,sinfo)[:-4]) + "*youtube.mp4")
 #                 # asss = glob.glob(glob.escape(get_fname(dldir,sinfo)[:-4]) + "*youtube.ass")
@@ -1266,7 +1296,7 @@ exit()
 #                     uwsc_dialog()
 #                     continue
 #                 print(f"ckecking... {URLUTAM}{utaid}/ , {repr(s)}")
-#                 sinfo = search_utanet(utaid)
+#                 sinfo = search_utaid(utaid)
 #                 print(f" track  yt={yinfo.get('track')}")
 #                 print(f"       uta={sinfo.get('title')}")
 #                 print(f" artist yt={yinfo.get('artist')}")
