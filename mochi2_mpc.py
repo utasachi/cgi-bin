@@ -364,7 +364,7 @@ icon_img = sinfo_txt = mp3bgv_txt = offv_txt = pitch_txt = confirm_txt = kashi_t
 # 動画登録中
 if form.getvalue('confirm') == 'y':
     print('<center><div class="loader"></div>⏳ 楽曲登録中......<br />',flush=True)
-    if form.getvalue('pitch_value') != '0':        # キーピッチ変更
+    if form.getvalue('pitch_value') not in (None, '0'):        # キーピッチ変更
         pitch_value = form.getvalue('pitch_value')
         pitch_v = pitch_value
         if int(pitch_v) > 0:
