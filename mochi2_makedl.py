@@ -1,7 +1,8 @@
 #!c:/mochikara2/.venv/Scripts/pythonw.exe
 # -*- coding: utf-8 -*-
-debug_idxs = set()  # 全部走行
-debug_idxs = {6}    # 特定走行モード
+# debug_idxs = set()  # 全部走行
+debug_idxs = {6,8,10} # 定例走行モード１ (4-7は放送時期で判断)
+debug_idxs = {8} # 定例走行モード１ (4-7は放送時期で判断)
 flg_mkyoutube = 1     # 動画タイプyoutubeをloopeditするか否か
 
 import os, sys, json, re, pickle, html, subprocess, glob, configparser,shutil
@@ -461,7 +462,7 @@ for i, plst in enumerate(plists):
 
 # 歌ネット
     if plst['pltype'] == "uta-net":
-        nglist = ["TVsize","TVサイズ"]
+        nglist = ["TVsize","TVサイズ","TV size",""]
         page = requests.get(plst['url']).text
         pattern = re.compile(r'<a href="/song/(\d+)/">(.*?)</a>\s*/\s*(.*?)</td>')
         songs = []
@@ -527,7 +528,7 @@ for i, plst in enumerate(plists):
             #     continue                # ★ no_utaid にあれば除外
             print(f"yt-dlp {vidid}")
             append_ytdlp_cmd(batf, vidid, dldir)
-        # run_batf(batf)
+        run_batf(batf)
 
         # loopedit作成
         batf2 = dldir + "!dl2.bat"

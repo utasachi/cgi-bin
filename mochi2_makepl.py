@@ -12,15 +12,15 @@ sys.stdout.reconfigure(encoding='utf-8')
 os.chdir(Path(__file__).resolve().parent)
 print("Content-Type: text/html; charset=UTF-8\r\n")
 
-RETRY_COUNT = 5                                     # 試行回数
-if len(sys.argv) == 1:
-    debug_idxs = set()                              # 引数なし → 全部走行
-else:
-    debug_idxs = {int(x) for x in sys.argv[1:]}     # 指定された番号だけ
-# debug_idxs = {2,3,6,8,9,10,11}                      # 特定走行モード
-debug_idxs = {10,11}                      # 特定走行モード
+debug_idxs = {2,3,6,8,9,10,11,18,19}      # 定例走行モード(4-7は放送時期で判断)
+
+# if len(sys.argv) == 1:
+#     debug_idxs = set()                            # 引数なし → 全部走行
+# else:
+#     debug_idxs = {int(x) for x in sys.argv[1:]}   # 指定された番号だけ
 for f in Path("../tmp").glob("mochi2cache_*.pkl"):  # キャッシュ全消し
     f.unlink()
+RETRY_COUNT = 5                                     # 試行回数
 
 NOIMG = "images/noimg.png"
 karapath = open("../Apache24/conf/httpd-mochikara.conf", encoding="utf-8")\
